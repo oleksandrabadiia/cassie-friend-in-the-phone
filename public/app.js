@@ -119,7 +119,7 @@ function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
 
 const history=[];
 // ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
-const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Hmm, let me think!'];
+const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Let me think…','Oh yeah!','Nice!','Wow!','Gotcha!','Aha!','Ha!','Ooh, good one!','Right…','Hmm, let me see…','Oh! Okay, okay…','Brilliant!'];
 const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
 const calloutBufs={};
 async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t)}); }catch(e){} } }
@@ -132,9 +132,11 @@ async function fetchAudio(text){
 async function loadFillers(){
   const v=S.voice; if(fillerBufs[v]) return;
   fillerBufs[v]=[];
-  for(const t of FILLERS){ try{ fillerBufs[v].push(await fetchAudio(t)); }catch(e){} }
+  const list=FILLERS.slice().sort(()=>Math.random()-.5);
+  for(let i=0;i<list.length;i+=3){ await Promise.all(list.slice(i,i+3).map(async t=>{ try{ fillerBufs[v].push(await fetchAudio(t)); }catch(e){} })); }
 }
-function randomFiller(){ const l=fillerBufs[S.voice]; return l&&l.length?l[Math.floor(Math.random()*l.length)]:null; }
+let lastFiller=null;
+function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return null; let b; do{ b=l[Math.floor(Math.random()*l.length)]; }while(l.length>1&&b===lastFiller); lastFiller=b; return b; }
 
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
