@@ -107,7 +107,7 @@ async function startListening(auto){
     else{
       const thr=Math.max(0.018,noise*3);
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
-      if(recInfo.heard&&t-lastLoud>1400) return stopListening();
+      if(recInfo.heard&&t-lastLoud>800) return stopListening();
       if(!recInfo.heard&&t>(auto?7000:9000)){ recInfo.cancelled=true; return stopListening(); }
       if(t>20000) return stopListening();
     }
@@ -118,6 +118,21 @@ async function startListening(auto){
 function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
 
 const history=[];
+// ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
+const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Hmm, let me think!'];
+const fillerBufs={};  // voice -> [AudioBuffer]
+async function fetchAudio(text){
+  const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice})});
+  const bytes=await r.arrayBuffer(); const ctx=audioCtx();
+  return await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
+}
+async function loadFillers(){
+  const v=S.voice; if(fillerBufs[v]) return;
+  fillerBufs[v]=[];
+  for(const t of FILLERS){ try{ fillerBufs[v].push(await fetchAudio(t)); }catch(e){} }
+}
+function randomFiller(){ const l=fillerBufs[S.voice]; return l&&l.length?l[Math.floor(Math.random()*l.length)]:null; }
+
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
   if(info.cancelled||!info.heard){ markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
@@ -125,44 +140,64 @@ async function onRecorded(){
   const blob=new Blob(chunks,{type:info.mime});
   const ext=info.mime.includes('webm')?'webm':info.mime.includes('ogg')?'ogg':'m4a';
   const seconds=(performance.now()-info.started)/1000;
+  // start hearing+thinking straight away, and say a quick "Hmm…" while we wait
+  const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
+  fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft()}));
+  const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
+  const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
   try{
-    const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
-    const r=await api('/api/hear',{method:'POST',body:fd}); const {text}=await r.json();
-    history.push({role:'user',content:text||'(William said something but it was too quiet or unclear to hear.)'});
-    await cassieReplies(false);
+    const {heard,say:text,mood}=await turnP;
+    history.push({role:'user',content:heard||'(William said something but it was too quiet or unclear to hear.)'});
+    history.push({role:'assistant',content:text});
+    await fillerDone;
+    await speakReply(text,mood);
   }catch(e){ console.error(e); markActive(false); setState('idle'); say(friendlyError(e),true); }
 }
 
 // ---------- Cassie replies ----------
-let currentSource=null;
+let currentSource=null, playToken=0;
 async function cassieReplies(isStart){
   setState('thinking');
   const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:history.slice(-16),minutesLeft:minutesLeft(),start:isStart})});
   const {say:text,mood}=await r.json();
   history.push({role:'assistant',content:text});
-  await speak(text,mood);
+  loadFillers();
+  await speakReply(text,mood);
 }
-async function speak(text,mood){
-  const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice})});
-  const bytes=await r.arrayBuffer();
+// split into a short first part (so she can start talking sooner) and the rest
+function splitFirst(text){
+  const m=text.match(/^(.{6,140}?[.!?…])(\s+)([\s\S]+)$/);
+  return m?[m[1],m[3]]:[text];
+}
+async function speakReply(text,mood){
+  const parts=splitFirst(text);
+  const bufsP=parts.map(p=>fetchAudio(p));   // make all parts at the same time
+  say(text);
+  const token=++playToken;
+  for(let i=0;i<parts.length;i++){
+    const b=await bufsP[i];
+    if(token!==playToken) return;
+    await playBuffer(b,i===0?mood:null);
+    if(token!==playToken||state!=='speaking') return;   // interrupted
+  }
+  face().speaking(false);
+  if(minutesLeft()<=0) return goToSleep();
+  if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
+}
+function playBuffer(audio,mood,opts={}){
   const ctx=audioCtx();
-  const audio=await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
   const src=ctx.createBufferSource(); src.buffer=audio;
   const an=ctx.createAnalyser(); an.fftSize=512; src.connect(an); an.connect(ctx.destination);
   const buf=new Float32Array(an.fftSize);
   currentSource=src;
-  say(text);
-  setState('speaking'); markActive(true);
+  if(!opts.keepThinking){ setState('speaking'); }
+  markActive(true);
   const f=face(); f.speaking(true); if(mood&&mood!=='front') f.mood(mood);
   let running=true;
   const loop=()=>{ if(!running) return; an.getFloatTimeDomainData(buf); let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i]; f.level(Math.min(1,Math.sqrt(s/buf.length)*4)); requestAnimationFrame(loop); };
-  await new Promise(res=>{ src.onended=res; src.start(); loop(); });
-  running=false; f.speaking(false); currentSource=null;
-  if(state!=='speaking') return;      // interrupted
-  if(minutesLeft()<=0) return goToSleep();
-  if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
+  return new Promise(res=>{ src.onended=()=>{ running=false; if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src) currentSource=null; res(); }; src.start(); loop(); });
 }
-function interrupt(){ if(currentSource){ try{ currentSource.onended=null; currentSource.stop(); }catch(e){} currentSource=null; face().speaking(false); } }
+function interrupt(){ playToken++; if(currentSource){ try{ currentSource.onended=null; currentSource.stop(); }catch(e){} currentSource=null; face().speaking(false); } }
 
 function goToSleep(){ markActive(false); setState('sleeping'); say('That’s all our Cassie time for today. Let’s play again tomorrow!'); }
 
@@ -253,7 +288,7 @@ function renderVoices(){
   VOICES.forEach(([id,name,desc])=>{
     const row=document.createElement('div'); row.className='vrow'+(S.voice===id?' on':'');
     row.innerHTML=`<button class="play" type="button" aria-label="Hear ${name}">&#9654;</button><button class="pick" type="button" role="radio" aria-checked="${S.voice===id}"><b>${name}</b><span>${desc}</span></button><span class="tick">${S.voice===id?'Chosen':''}</span>`;
-    row.querySelector('.pick').addEventListener('click',()=>{ S.voice=id; store.set('voice',id); renderVoices(); });
+    row.querySelector('.pick').addEventListener('click',()=>{ S.voice=id; store.set('voice',id); renderVoices(); if(started) loadFillers(); });
     const pb=row.querySelector('.play');
     pb.addEventListener('click',async ()=>{
       audioCtx(); if(sampleSrc){ try{ sampleSrc.stop(); }catch(e){} sampleSrc=null; }
