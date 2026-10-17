@@ -88,6 +88,15 @@ input[type=number]{width:90px}
 .err{color:var(--warn);font-weight:600;min-height:1.2em}
 .good{color:var(--ok);font-weight:600}
 .start{position:fixed;inset:0;z-index:15;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:max(40px,env(safe-area-inset-bottom));background:transparent}
+.voices{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+.vrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;border:2px solid #efe6f8;background:#fff}
+.vrow.on{border-color:var(--clay);background:var(--clay-soft)}
+.vrow .play{flex:none;width:42px;height:42px;border-radius:50%;border:0;background:var(--clay);color:#fff;font-size:1rem;cursor:pointer;box-shadow:inset 0 -3px 0 var(--clay-deep)}
+.vrow .play.busy{opacity:.55}
+.vrow .pick{flex:1;min-width:0;text-align:left;background:none;border:0;font:inherit;color:var(--ink);cursor:pointer;padding:4px 0}
+.vrow .pick b{font-family:var(--display);font-size:1.05rem}
+.vrow .pick span{display:block;color:var(--ink-soft);font-size:.86rem}
+.vrow .tick{flex:none;color:var(--clay-deep);font-weight:700;font-size:.9rem}
 .toggle{width:52px;height:32px;border-radius:99px;background:#e2d7ee;border:0;position:relative;cursor:pointer;flex:none}
 .toggle::after{content:"";position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .toggle[aria-checked="true"]{background:var(--clay)}
@@ -154,18 +163,8 @@ input[type=number]{width:90px}
     <h3>How Cassie behaves</h3>
     <div class="row"><label id="hfLbl">Keep listening after she speaks</label><button class="toggle" id="handsFree" type="button" role="switch" aria-labelledby="hfLbl"></button></div>
     <div class="row"><label id="wordsLbl">Show Cassie&rsquo;s words on screen</label><button class="toggle" id="showWords" type="button" role="switch" aria-labelledby="wordsLbl"></button></div>
-    <div class="row"><label for="voiceSel">Cassie&rsquo;s voice</label>
-      <select id="voiceSel">
-        <option value="coral">Coral (warm, friendly)</option>
-        <option value="marin">Marin (soft, natural)</option>
-        <option value="shimmer">Shimmer (gentle, bright)</option>
-        <option value="sage">Sage (calm, kind)</option>
-        <option value="nova">Nova (cheerful)</option>
-        <option value="fable">Fable (storyteller)</option>
-        <option value="alloy">Alloy (clear, neutral)</option>
-        <option value="ballad">Ballad (soft, dreamy)</option>
-      </select></div>
-    <div class="btns"><button class="btn soft" id="tryVoice" type="button">Hear this voice</button></div>
+    <p>Tap &#9654; to hear each voice, then choose one for Cassie.</p>
+    <div class="voices" id="voiceList" role="radiogroup" aria-label="Cassie&rsquo;s voice"></div>
 
     <h3>Spending this month</h3>
     <div class="row"><span>Estimated so far</span><span class="v" id="spend">–</span></div>

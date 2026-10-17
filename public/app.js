@@ -13,7 +13,7 @@ const S={
   limit:store.get('limit',20),
   handsFree:store.get('handsFree',true),
   showWords:store.get('showWords',true),
-  voice:store.get('voice','coral'),
+  voice:store.get('voice','marin'),
 };
 const today=()=>new Date().toLocaleDateString('en-CA');
 function usage(){ const u=store.get('usage',{}); return u.date===today()?u:{date:today(),seconds:0,bonus:0}; }
@@ -221,7 +221,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 function setToggle(el,on){ el.setAttribute('aria-checked',on?'true':'false'); }
 function chips(el,items,cls){ el.innerHTML=''; if(!items.length){ el.innerHTML='<span class="empty">Nothing yet</span>'; return; } items.forEach(t=>{ const s=document.createElement('span'); s.className='chip'+(cls?' '+cls:''); s.textContent=t; el.appendChild(s); }); }
 async function openParent(){
-  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('showWords'),S.showWords); $('voiceSel').value=S.voice;
+  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('showWords'),S.showWords); renderVoices();
   const u=usage(); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min';
   $('parent').hidden=false; $('resetConfirm').hidden=true;
   $('keyStatus').textContent='Checking Cassie’s connection…';
@@ -240,8 +240,30 @@ $('limitIn').addEventListener('change',()=>{ const v=Math.max(5,Math.min(120,par
 $('plus10').addEventListener('click',()=>{ const u=usage(); u.bonus+=10; saveUsage(u); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min'; if(state==='sleeping') { setState('idle'); say('',true); } });
 $('handsFree').addEventListener('click',()=>{ S.handsFree=!S.handsFree; store.set('handsFree',S.handsFree); setToggle($('handsFree'),S.handsFree); });
 $('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); });
-$('voiceSel').addEventListener('change',()=>{ S.voice=$('voiceSel').value; store.set('voice',S.voice); });
-$('tryVoice').addEventListener('click',async ()=>{ audioCtx(); try{ $('parent').hidden=true; await speak('Hello William! It’s Cassie. Do you like this voice?','happy'); }catch(e){ say(friendlyError(e),true); } });
+const VOICES=[['marin','Marin','Soft and natural'],['coral','Coral','Warm and friendly'],['shimmer','Shimmer','Gentle and bright'],['sage','Sage','Calm and kind'],['nova','Nova','Cheerful'],['fable','Fable','Storyteller'],['alloy','Alloy','Clear and neutral'],['ballad','Ballad','Soft and dreamy']];
+let sampleSrc=null;
+function renderVoices(){
+  const box=$('voiceList'); box.innerHTML='';
+  VOICES.forEach(([id,name,desc])=>{
+    const row=document.createElement('div'); row.className='vrow'+(S.voice===id?' on':'');
+    row.innerHTML=`<button class="play" type="button" aria-label="Hear ${name}">&#9654;</button><button class="pick" type="button" role="radio" aria-checked="${S.voice===id}"><b>${name}</b><span>${desc}</span></button><span class="tick">${S.voice===id?'Chosen':''}</span>`;
+    row.querySelector('.pick').addEventListener('click',()=>{ S.voice=id; store.set('voice',id); renderVoices(); });
+    const pb=row.querySelector('.play');
+    pb.addEventListener('click',async ()=>{
+      audioCtx(); if(sampleSrc){ try{ sampleSrc.stop(); }catch(e){} sampleSrc=null; }
+      pb.classList.add('busy');
+      try{
+        const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:`Hello William! It's me, Cassie, your friend in the phone. This is my ${name} voice. Ooh, I've got an idea! Spider-Man needs our help today. He's lost his web somewhere in the city, and we need to find it. Can you think of something that begins with the sound sss? Take your time, I'm listening.`,voice:id})});
+        const bytes=await r.arrayBuffer(); const ctx=audioCtx();
+        const audio=await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
+        const src=ctx.createBufferSource(); src.buffer=audio; src.connect(ctx.destination); sampleSrc=src; src.start();
+        src.onended=()=>{ if(sampleSrc===src) sampleSrc=null; };
+      }catch(e){ $('keyStatus').innerHTML='<span class="err">'+friendlyError(e)+'</span>'; }
+      pb.classList.remove('busy');
+    });
+    box.appendChild(row);
+  });
+}
 $('resetProfile').addEventListener('click',()=>{ $('resetConfirm').hidden=false; });
 $('resetNo').addEventListener('click',()=>{ $('resetConfirm').hidden=true; });
 $('resetYes').addEventListener('click',async ()=>{ try{ await api('/api/status',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'reset-profile'})}); $('resetConfirm').hidden=true; openParent(); }catch(e){ $('keyStatus').textContent=friendlyError(e); } });
