@@ -1,0 +1,13 @@
+[build]
+  publish = "public"
+  command = "echo 'no build needed'"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "microphone=(self)"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"

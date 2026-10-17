@@ -1,0 +1,73 @@
+import { getStore } from "@netlify/blobs";
+
+export const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+
+// Only devices that know the family code can use Cassie (and your OpenAI credit).
+export function checkCode(req: Request): Response | null {
+  const expected = Netlify.env.get("CASSIE_FAMILY_CODE");
+  const got = req.headers.get("x-cassie-code") || "";
+  if (!expected) return json({ error: "Family code is not set up on the server yet." }, 500);
+  if (got.trim().toLowerCase() !== expected.trim().toLowerCase()) return json({ error: "wrong-code" }, 401);
+  return null;
+}
+
+export function openaiKey(): string | null {
+  return Netlify.env.get("OPENAI_API_KEY") || null;
+}
+
+// ---------- spending guard (rough estimate, the hard cap is your OpenAI monthly limit) ----------
+const store = () => getStore({ name: "cassie", consistency: "strong" });
+const monthKey = () => "usage-" + new Date().toISOString().slice(0, 7);
+const dayKey = () => "day-" + new Date().toISOString().slice(0, 10);
+
+export async function getUsage() {
+  const s = store();
+  const month = ((await s.get(monthKey(), { type: "json" })) as any) || { usd: 0, turns: 0 };
+  const day = ((await s.get(dayKey(), { type: "json" })) as any) || { usd: 0, turns: 0, speechSeconds: 0 };
+  return { month, day };
+}
+
+export async function addUsage(usd: number, speechSeconds = 0) {
+  const s = store();
+  const { month, day } = await getUsage();
+  month.usd += usd; month.turns += 1;
+  day.usd += usd; day.turns += 1; day.speechSeconds += speechSeconds;
+  await s.setJSON(monthKey(), month);
+  await s.setJSON(dayKey(), day);
+}
+
+export function monthlyLimitUsd(): number {
+  const v = parseFloat(Netlify.env.get("CASSIE_MONTHLY_LIMIT_USD") || "8");
+  return isFinite(v) ? v : 8;
+}
+
+export async function overBudget(): Promise<boolean> {
+  const { month } = await getUsage();
+  return month.usd >= monthlyLimitUsd();
+}
+
+// ---------- William's learning profile ----------
+export type Profile = { practised: Record<string, number>; tricky: Record<string, number>; likes: string[]; updated?: string };
+const emptyProfile = (): Profile => ({ practised: {}, tricky: {}, likes: [] });
+
+export async function getProfile(): Promise<Profile> {
+  return (((await store().get("profile", { type: "json" })) as Profile) || emptyProfile());
+}
+export async function saveProfile(p: Profile) {
+  p.updated = new Date().toISOString();
+  await store().setJSON("profile", p);
+}
+export async function resetProfile() {
+  await store().setJSON("profile", emptyProfile());
+}
+
+export function profileSummary(p: Profile): string {
+  const top = (o: Record<string, number>) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k]) => k);
+  const parts: string[] = [];
+  const pr = top(p.practised), tr = top(p.tricky);
+  if (pr.length) parts.push("Sounds/skills William has practised successfully: " + pr.join(", ") + ".");
+  if (tr.length) parts.push("Sounds/skills he finds tricky (practise gently, without pressure): " + tr.join(", ") + ".");
+  if (p.likes.length) parts.push("Things he has enjoyed: " + p.likes.slice(-10).join(", ") + ".");
+  return parts.length ? "SAVED LEARNING PROFILE\n" + parts.join("\n") : "SAVED LEARNING PROFILE\nNothing saved yet.";
+}

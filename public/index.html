@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Cassie</title>
+<meta name="description" content="William's friend in the phone">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Cassie">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-192.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: one-screen app. Cassie floats on white; one big clay talk button below; a tiny parent button hides in the corner. */
+:root{
+  --paper:#ffffff;
+  --clay:#7b3fb3;
+  --clay-deep:#4c1d7a;
+  --clay-soft:#efe6f8;
+  --ink:#3a2a4a;
+  --ink-soft:#7a6a86;
+  --ok:#2f7d4f;
+  --warn:#b4541a;
+  --display:"Baloo 2","Arial Rounded MT Bold","Trebuchet MS",system-ui,sans-serif;
+  --body:"Nunito","Segoe UI",system-ui,-apple-system,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.app{height:100%;display:flex;flex-direction:column;align-items:center;
+  padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom));
+  padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));gap:6px}
+.stage{flex:1;min-height:0;width:100%;max-width:560px;display:flex;align-items:center;justify-content:center}
+#cv{display:block;max-width:100%;max-height:100%}
+.caption{min-height:3.9em;max-width:32ch;text-align:center;font-family:var(--display);font-weight:500;font-size:1.12rem;line-height:1.3;color:var(--ink);text-wrap:balance;display:flex;align-items:center;justify-content:center}
+.caption.small{font-size:.95rem;color:var(--ink-soft)}
+.talkwrap{display:flex;flex-direction:column;align-items:center;gap:6px;padding-bottom:4px}
+.talk{position:relative;width:112px;height:112px;border-radius:50%;border:0;background:var(--clay);color:#fff;cursor:pointer;
+  box-shadow:inset 0 -9px 0 var(--clay-deep),inset 0 6px 10px rgba(255,255,255,.18),0 10px 22px rgba(76,29,122,.28);transition:transform .12s}
+.talk:active{transform:translateY(4px) scale(.98);box-shadow:inset 0 -4px 0 var(--clay-deep),0 5px 12px rgba(76,29,122,.25)}
+.talk svg{width:48px;height:48px;display:block;margin:auto}
+.talk .ring{position:absolute;inset:-10px;border-radius:50%;border:6px solid var(--clay);opacity:0;pointer-events:none}
+.talk[data-state="listening"] .ring{animation:ring 1.2s ease-out infinite}
+@keyframes ring{0%{transform:scale(.9);opacity:.55}100%{transform:scale(1.25);opacity:0}}
+.talk[data-state="thinking"]{background:#9a6ccc}
+.talk[data-state="sleeping"]{background:#cbb8de;box-shadow:inset 0 -9px 0 #a58fc0}
+.talk .ic{display:none}
+.talk[data-state="idle"] .ic-mic,.talk[data-state="listening"] .ic-stop,.talk[data-state="thinking"] .ic-dots,.talk[data-state="speaking"] .ic-wave,.talk[data-state="sleeping"] .ic-moon{display:block}
+.ic-dots circle{animation:bob 1s ease-in-out infinite}
+.ic-dots circle:nth-child(2){animation-delay:.15s}.ic-dots circle:nth-child(3){animation-delay:.3s}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+.talklabel{font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--clay-deep);min-height:1.4em}
+.parentbtn{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
+.parentbtn svg{width:22px;height:22px}
+.parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);clip-path:inset(0 100% 0 0);transition:clip-path 0s}
+.parentbtn.holding .prog{clip-path:inset(0 0 0 0);transition:clip-path 1.6s linear}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--clay-deep);outline-offset:3px}
+/* overlays */
+.sheet{position:fixed;inset:0;background:rgba(58,42,74,.32);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.panel{background:#fff;width:100%;max-width:520px;max-height:92%;overflow:auto;border-radius:22px 22px 0 0;
+  padding:22px max(18px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));
+  -webkit-user-select:text;user-select:text}
+.panel h2{font-family:var(--display);font-weight:700;font-size:1.5rem;margin:0 0 4px;color:var(--clay-deep)}
+.panel h3{font-family:var(--display);font-weight:700;font-size:1.05rem;margin:18px 0 6px;color:var(--ink)}
+.panel p{margin:4px 0 10px;color:var(--ink-soft);line-height:1.45;font-size:.95rem}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f0eaf6}
+.row label{font-weight:600}
+.row .v{font-variant-numeric:tabular-nums;color:var(--ink)}
+input[type=text],input[type=number],select{font:inherit;font-size:1rem;padding:10px 12px;border-radius:12px;border:2px solid #e2d7ee;background:#fff;color:var(--ink);min-width:0}
+input[type=number]{width:90px}
+.btn{font-family:var(--display);font-weight:700;font-size:1.05rem;border:0;border-radius:999px;padding:11px 22px;cursor:pointer;background:var(--clay);color:#fff;box-shadow:inset 0 -4px 0 var(--clay-deep)}
+.btn.soft{background:var(--clay-soft);color:var(--clay-deep);box-shadow:inset 0 -3px 0 rgba(76,29,122,.15)}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.chip{background:var(--clay-soft);color:var(--clay-deep);border-radius:999px;padding:4px 11px;font-size:.88rem;font-weight:600}
+.chip.tricky{background:#fdeee3;color:var(--warn)}
+.empty{color:var(--ink-soft);font-size:.9rem}
+.bar{height:10px;border-radius:99px;background:#f0eaf6;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--clay);border-radius:99px}
+.err{color:var(--warn);font-weight:600;min-height:1.2em}
+.good{color:var(--ok);font-weight:600}
+.start{position:fixed;inset:0;z-index:15;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:max(40px,env(safe-area-inset-bottom));background:transparent}
+.toggle{width:52px;height:32px;border-radius:99px;background:#e2d7ee;border:0;position:relative;cursor:pointer;flex:none}
+.toggle::after{content:"";position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle[aria-checked="true"]{background:var(--clay)}
+.toggle[aria-checked="true"]::after{left:24px}
+@media (max-height:640px){.talk{width:92px;height:92px}.caption{font-size:1rem;min-height:3.4em}}
+@media (prefers-reduced-motion:reduce){.talk .ring,.ic-dots circle{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage"><canvas id="cv" role="img" aria-label="Cassie, a purple clay friend with big googly eyes"></canvas></div>
+  <div class="caption" id="caption" aria-live="polite"></div>
+  <div class="talkwrap">
+    <button class="talk" id="talk" type="button" data-state="idle" aria-label="Talk to Cassie">
+      <span class="ring"></span>
+      <svg class="ic ic-mic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><rect x="17" y="6" width="14" height="24" rx="7" fill="currentColor" stroke="none"/><path d="M10 23a14 14 0 0 0 28 0M24 37v6"/></svg>
+      <svg class="ic ic-stop" viewBox="0 0 48 48"><rect x="14" y="14" width="20" height="20" rx="5" fill="currentColor"/></svg>
+      <svg class="ic ic-dots" viewBox="0 0 48 48" fill="currentColor"><circle cx="13" cy="26" r="4.5"/><circle cx="24" cy="26" r="4.5"/><circle cx="35" cy="26" r="4.5"/></svg>
+      <svg class="ic ic-wave" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><path d="M10 20v8M18 14v20M26 10v28M34 16v16M40 21v6"/></svg>
+      <svg class="ic ic-moon" viewBox="0 0 48 48" fill="currentColor"><path d="M30 8a16 16 0 1 0 10 28A14 14 0 0 1 30 8z"/></svg>
+    </button>
+    <div class="talklabel" id="talklabel">Talk</div>
+  </div>
+</div>
+
+<button class="parentbtn" id="parentBtn" type="button" aria-label="Grown-ups: press and hold">
+  <span class="prog"></span>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+</button>
+
+<!-- first-time setup: family code -->
+<div class="sheet" id="setup" hidden>
+  <form class="panel" id="setupForm">
+    <h2>Set up Cassie</h2>
+    <p>Grown-ups only. Type the family code once on this phone or iPad. It stops anyone else using Cassie.</p>
+    <div class="row"><label for="codeIn">Family code</label><input id="codeIn" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="three words and a number"></div>
+    <div class="err" id="setupErr"></div>
+    <div class="btns"><button class="btn" type="submit">Save</button></div>
+  </form>
+</div>
+
+<!-- grown-up gate -->
+<div class="sheet" id="gate" hidden>
+  <form class="panel" id="gateForm">
+    <h2>Grown-ups only</h2>
+    <p id="gateQ">What is 7 + 8?</p>
+    <div class="row"><label for="gateIn">Answer</label><input id="gateIn" type="number" inputmode="numeric"></div>
+    <div class="err" id="gateErr"></div>
+    <div class="btns"><button class="btn" type="submit">Open settings</button><button class="btn soft" type="button" data-close>Cancel</button></div>
+  </form>
+</div>
+
+<!-- parent settings -->
+<div class="sheet" id="parent" hidden>
+  <div class="panel">
+    <h2>Cassie settings</h2>
+    <p id="keyStatus">Checking Cassie&rsquo;s connection…</p>
+
+    <h3>Today</h3>
+    <div class="row"><label for="limitIn">Daily Cassie time (minutes)</label><input id="limitIn" type="number" min="5" max="120" step="5"></div>
+    <div class="row"><span>Used today on this device</span><span class="v" id="usedToday">0 min</span></div>
+    <div class="btns"><button class="btn soft" id="plus10" type="button">Give 10 more minutes today</button></div>
+
+    <h3>How Cassie behaves</h3>
+    <div class="row"><label id="hfLbl">Keep listening after she speaks</label><button class="toggle" id="handsFree" type="button" role="switch" aria-labelledby="hfLbl"></button></div>
+    <div class="row"><label id="wordsLbl">Show Cassie&rsquo;s words on screen</label><button class="toggle" id="showWords" type="button" role="switch" aria-labelledby="wordsLbl"></button></div>
+    <div class="row"><label for="voiceSel">Cassie&rsquo;s voice</label>
+      <select id="voiceSel"><option value="coral">Coral (warm)</option><option value="shimmer">Shimmer (soft)</option><option value="sage">Sage (calm)</option><option value="nova">Nova (bright)</option><option value="ballad">Ballad (gentle)</option></select></div>
+    <div class="btns"><button class="btn soft" id="tryVoice" type="button">Hear this voice</button></div>
+
+    <h3>Spending this month</h3>
+    <div class="row"><span>Estimated so far</span><span class="v" id="spend">–</span></div>
+    <div class="bar"><i id="spendBar" style="width:0%"></i></div>
+    <p>A rough estimate. Your OpenAI monthly limit is the real safety cap.</p>
+
+    <h3>William&rsquo;s learning</h3>
+    <p>Practised well</p><div class="chips" id="pPractised"></div>
+    <p>Finds tricky</p><div class="chips" id="pTricky"></div>
+    <p>Enjoys</p><div class="chips" id="pLikes"></div>
+    <div class="btns"><button class="btn soft" id="resetProfile" type="button">Clear learning progress</button></div>
+    <div id="resetConfirm" hidden><p>Clear everything Cassie has saved about William&rsquo;s learning?</p><div class="btns"><button class="btn" id="resetYes" type="button">Yes, clear it</button><button class="btn soft" id="resetNo" type="button">Keep it</button></div></div>
+
+    <h3>This device</h3>
+    <div class="btns"><button class="btn soft" id="changeCode" type="button">Change family code</button></div>
+    <div class="btns"><button class="btn" data-close type="button">Done</button></div>
+  </div>
+</div>
+
+<script src="/engine.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
