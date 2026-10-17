@@ -2,6 +2,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { checkCode, json, openaiKey, addUsage, overBudget } from "../lib/common.mts";
 
+const GOOGLE_VOICES = new Set(["en-GB-Chirp3-HD-Aoede", "en-GB-Chirp3-HD-Kore", "en-GB-Chirp3-HD-Leda", "en-GB-Chirp3-HD-Zephyr", "en-GB-Chirp3-HD-Sulafat", "en-GB-Chirp3-HD-Achernar"]);
 const VOICES = new Set(["coral", "shimmer", "sage", "nova", "fable", "alloy", "ballad", "verse", "marin", "cedar"]);
 const STYLE = "You are Cassie, a warm, soft, gentle young British woman with a smile in your voice, talking to a five-year-old boy. Speak calmly and clearly, a little slower than normal, playful and kind, never shouty. Stretchy phonics sounds like mmm or sss should be held gently.";
 
@@ -12,8 +13,29 @@ export default async (req: Request, _ctx: Context) => {
 
   const body: any = await req.json().catch(() => ({}));
   const text = String(body.text || "").slice(0, 600);
-  const voice = VOICES.has(body.voice) ? body.voice : "coral";
   if (!text) return json({ error: "no-text" }, 400);
+
+  // Google voices (free allowance of 1 million characters a month)
+  if (typeof body.voice === "string" && body.voice.startsWith("g:")) {
+    const gname = body.voice.slice(2);
+    if (!GOOGLE_VOICES.has(gname)) return json({ error: "bad-voice" }, 400);
+    const gkey = Netlify.env.get("GOOGLE_TTS_KEY");
+    if (!gkey) return json({ error: "no-google-key" }, 500);
+    const r = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(gkey)}`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: { text }, voice: { languageCode: "en-GB", name: gname }, audioConfig: { audioEncoding: "MP3", speakingRate: 0.95 } }),
+    });
+    if (!r.ok) {
+      const err = await r.text(); console.log("google speak failed", r.status, err.slice(0, 400));
+      return json({ error: r.status === 403 || r.status === 400 ? "bad-google-key" : "speak-failed" }, 502);
+    }
+    const d: any = await r.json();
+    const bytes = Uint8Array.from(atob(d.audioContent || ""), (c) => c.charCodeAt(0));
+    await addUsage(0, text.length / 15); // inside Google's free monthly allowance
+    return new Response(bytes, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
+  }
+
+  const voice = VOICES.has(body.voice) ? body.voice : "marin";
 
   const attempts = [
     { model: "gpt-4o-mini-tts", voice, input: text, instructions: STYLE, response_format: "mp3" },

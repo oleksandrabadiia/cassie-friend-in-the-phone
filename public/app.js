@@ -48,6 +48,8 @@ function friendlyError(e){
     case 'no-key': return 'Cassie isn’t connected yet. A grown-up needs to add the OpenAI key on Netlify.';
     case 'bad-key': return 'Cassie’s OpenAI key isn’t working. A grown-up needs to check it.';
     case 'budget': return 'Cassie has used this month’s pocket money. A grown-up can check the settings.';
+    case 'no-google-key': return 'Google voices aren’t connected yet. A grown-up needs to add the Google key on Netlify.';
+    case 'bad-google-key': return 'The Google voice key isn’t working. A grown-up needs to check it.';
     case 'openai-limit': return 'Cassie needs a little rest. Try again in a minute.';
     default: return 'Oops, Cassie couldn’t hear the internet. Try again!';
   }
@@ -240,7 +242,11 @@ $('limitIn').addEventListener('change',()=>{ const v=Math.max(5,Math.min(120,par
 $('plus10').addEventListener('click',()=>{ const u=usage(); u.bonus+=10; saveUsage(u); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min'; if(state==='sleeping') { setState('idle'); say('',true); } });
 $('handsFree').addEventListener('click',()=>{ S.handsFree=!S.handsFree; store.set('handsFree',S.handsFree); setToggle($('handsFree'),S.handsFree); });
 $('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); });
-const VOICES=[['marin','Marin','Soft and natural'],['coral','Coral','Warm and friendly'],['shimmer','Shimmer','Gentle and bright'],['sage','Sage','Calm and kind'],['nova','Nova','Cheerful'],['fable','Fable','Storyteller'],['alloy','Alloy','Clear and neutral'],['ballad','Ballad','Soft and dreamy']];
+const VOICES=[
+  ['marin','Marin','OpenAI · soft and natural'],['shimmer','Shimmer','OpenAI · light and bright'],['sage','Sage','OpenAI · calm and kind'],['coral','Coral','OpenAI · warm and friendly'],
+  ['nova','Nova','OpenAI · cheerful'],['fable','Fable','OpenAI · storyteller'],['alloy','Alloy','OpenAI · clear'],['ballad','Ballad','OpenAI · soft and dreamy'],
+  ['g:en-GB-Chirp3-HD-Aoede','Aoede','Google · British, free'],['g:en-GB-Chirp3-HD-Kore','Kore','Google · British, free'],['g:en-GB-Chirp3-HD-Leda','Leda','Google · British, free'],
+  ['g:en-GB-Chirp3-HD-Zephyr','Zephyr','Google · British, free'],['g:en-GB-Chirp3-HD-Sulafat','Sulafat','Google · British, free'],['g:en-GB-Chirp3-HD-Achernar','Achernar','Google · British, free']];
 let sampleSrc=null;
 function renderVoices(){
   const box=$('voiceList'); box.innerHTML='';
