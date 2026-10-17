@@ -50,11 +50,13 @@ export async function overBudget(): Promise<boolean> {
 }
 
 // ---------- William's learning profile ----------
-export type Profile = { practised: Record<string, number>; tricky: Record<string, number>; likes: string[]; updated?: string };
-const emptyProfile = (): Profile => ({ practised: {}, tricky: {}, likes: [] });
+export type Profile = { practised: Record<string, number>; tricky: Record<string, number>; likes: string[]; memories: string[]; updated?: string };
+const emptyProfile = (): Profile => ({ practised: {}, tricky: {}, likes: [], memories: [] });
 
 export async function getProfile(): Promise<Profile> {
-  return (((await store().get("profile", { type: "json" })) as Profile) || emptyProfile());
+  const p = ((await store().get("profile", { type: "json" })) as Profile) || emptyProfile();
+  if (!Array.isArray(p.memories)) p.memories = [];
+  return p;
 }
 export async function saveProfile(p: Profile) {
   p.updated = new Date().toISOString();
@@ -71,5 +73,6 @@ export function profileSummary(p: Profile): string {
   if (pr.length) parts.push("Sounds/skills William has practised successfully: " + pr.join(", ") + ".");
   if (tr.length) parts.push("Sounds/skills he finds tricky (practise gently, without pressure): " + tr.join(", ") + ".");
   if (p.likes.length) parts.push("Things he has enjoyed: " + p.likes.slice(-10).join(", ") + ".");
+  if (p.memories?.length) parts.push("Notes from earlier chats (newest last):\n- " + p.memories.slice(-25).join("\n- "));
   return parts.length ? "SAVED LEARNING PROFILE\n" + parts.join("\n") : "SAVED LEARNING PROFILE\nNothing saved yet.";
 }

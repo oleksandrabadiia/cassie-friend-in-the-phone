@@ -33,7 +33,10 @@ function setState(s){
   else if(s==='sleeping') f.mode('sleepy');
   else if(s==='idle') f.mode('idle');
 }
-function say(text,small){ caption.classList.toggle('small',!!small); caption.textContent=(S.showWords||small)?text:''; }
+function say(text,small){ caption.classList.toggle('small',!!small); caption.textContent=(S.showWords||small)?text:''; caption.scrollTop=0; }
+// while Cassie talks, gently scroll long captions so the current bit is visible
+let capScroll=null;
+function scrollCaption(seconds){ clearInterval(capScroll); caption.scrollTop=0; const max=caption.scrollHeight-caption.clientHeight; if(max<=4) return; const t0=performance.now(); capScroll=setInterval(()=>{ const p=Math.min(1,(performance.now()-t0)/(seconds*1000)); caption.scrollTop=max*Math.max(0,(p-.25)/.75); if(p>=1) clearInterval(capScroll); },100); }
 
 // ---------- server calls ----------
 async function api(path,opts={}){
@@ -161,11 +164,14 @@ async function onRecorded(){
 
 // ---------- Cassie replies ----------
 let currentSource=null, playToken=0;
-async function cassieReplies(isStart){
+async function cassieReplies(isStart,topic){
   setState('thinking');
-  const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:history.slice(-16),minutesLeft:minutesLeft(),start:isStart})});
+  const filler=(!isStart&&randomFiller()); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
+  const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:history.slice(-16),minutesLeft:minutesLeft(),start:isStart,topic})});
   const {say:text,mood}=await r.json();
+  if(topic) history.push({role:'user',content:'(William tapped the '+topic+' button.)'});
   history.push({role:'assistant',content:text});
+  await fillerDone;
   loadFillers().then(loadCallouts);
   await speakReply(text,mood);
 }
@@ -177,7 +183,7 @@ function splitFirst(text){
 async function speakReply(text,mood){
   const parts=splitFirst(text);
   const bufsP=parts.map(p=>fetchAudio(p));   // make all parts at the same time
-  say(text);
+  say(text); scrollCaption(Math.max(3,text.length/14));
   const token=++playToken;
   for(let i=0;i<parts.length;i++){
     const b=await bufsP[i];
@@ -247,6 +253,16 @@ talkBtn.addEventListener('click',async ()=>{
   }
   startListening(false);
 });
+document.querySelectorAll('.topic').forEach(b=>b.addEventListener('click',async ()=>{
+  audioCtx(); if(!S.code){ openSetup(); return; }
+  if(state==='sleeping'||minutesLeft()<=0) return goToSleep();
+  if(state==='thinking') return;
+  if(state==='listening'){ recInfo&&(recInfo.cancelled=true); stopListening(); }
+  interrupt(); playToken++;
+  try{ if(!started){ started=true; try{ await getMic(); }catch(e){} loadFillers().then(loadCallouts); }
+    await cassieReplies(false,b.dataset.topic); }
+  catch(e){ console.error(e); markActive(false); setState('idle'); say(friendlyError(e),true); }
+}));
 $('cv').addEventListener('click',()=>{ if(state==='idle'||state==='sleeping'){ Math.random()<.4?face().jump():face().giggle(); } });
 
 // ---------- family code ----------

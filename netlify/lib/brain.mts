@@ -23,6 +23,20 @@ export async function transcribe(key: string, audio: File, seconds: number): Pro
 const MOODS = new Set(["happy", "front", "think", "surprise", "wink", "tired"]);
 const PRICE: Record<string, [number, number]> = { "gpt-4.1-mini": [0.4, 1.6], "gpt-4o-mini": [0.15, 0.6], "gpt-5-mini": [0.25, 2] };
 
+const TOPICS: Record<string, string> = {
+  maths: "William just tapped the MATHS button. Start a fun little counting or simple maths game right now (counting objects, one more/one less, simple adding with superheroes, dinosaurs or sweets). One question at a time.",
+  phonics: "William just tapped the PHONICS button. Start a short superhero or dinosaur phonics mission now, using his Phase 3 sounds and the saved profile. One sound at a time.",
+  world: "William just tapped the WORLD button. Share one amazing, simple fact about the world (countries, oceans, weather, volcanoes, people) and ask him a playful question about it.",
+  animals: "William just tapped the ANIMALS button. Play an animal game: a 'which animal am I?' riddle, animal sounds, or an amazing animal fact. Keep it short.",
+  quiz: "William just tapped the QUIZ button. Run a quick, easy quiz for a five-year-old, one question at a time, celebrating effort.",
+  draw: "William just tapped the DRAW button. Suggest something fun and specific for him to draw (a silly monster, a dinosaur in a rocket, his own superhero), then ask him to describe it to you as he draws.",
+  space: "William just tapped the SPACE button. Start a space adventure or share a simple space fact (planets, the Moon, rockets, astronauts) and ask one question.",
+  dinos: "William just tapped the DINOSAURS button. Start a dinosaur game or adventure: roaring contest, 'guess the dinosaur', or a fact about T. rex, Triceratops or Stegosaurus. One thing at a time.",
+  cars: "William just tapped the CARS button. Talk cars, racing cars, diggers, trains or monster trucks: a tiny race story or a 'what sound does it make' game.",
+  story: "William just tapped the STORY button. Begin a short, silly made-up story and stop after two or three sentences to ask William what happens next. Use characters from your notes if you have any.",
+  heroes: "William just tapped the SUPERHEROES button. Start a superhero mission with Spider-Man, Batman, Superman or a hero he invents.",
+  surprise: "William just tapped the SURPRISE button. Pick something unexpected and fun from his interests that you haven't done recently and jump straight in.",
+};
 export async function think(key: string, body: any): Promise<{ say: string; mood: string }> {
   const history = Array.isArray(body.messages) ? body.messages.slice(-16) : [];
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
@@ -32,6 +46,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
   const situation = [
     `It is ${now} (UK time).`,
     body.start ? "William has just opened the app. Greet him." : "",
+    body.topic ? TOPICS[body.topic] || "" : "",
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
 
@@ -67,7 +82,9 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
     try {
       const norm = (a: any) => (Array.isArray(a) ? a : []).map((x: any) => String(x).toLowerCase().trim()).filter((x: string) => x && x.length < 40).slice(0, 6);
       const pr = norm(out.practised), tr = norm(out.tricky), lk = norm(out.likes);
-      if (pr.length || tr.length || lk.length) {
+      const mem = (Array.isArray(out.remember) ? out.remember : []).map((x: any) => String(x).trim()).filter((x: string) => x && x.length < 160).slice(0, 2);
+      if (mem.length) { for (const m of mem) if (!profile.memories.includes(m)) profile.memories.push(m); profile.memories = profile.memories.slice(-60); }
+      if (pr.length || tr.length || lk.length || mem.length) {
         for (const s of pr) profile.practised[s] = (profile.practised[s] || 0) + 1;
         for (const s of tr) profile.tricky[s] = (profile.tricky[s] || 0) + 1;
         for (const s of lk) if (!profile.likes.includes(s)) profile.likes.push(s);
