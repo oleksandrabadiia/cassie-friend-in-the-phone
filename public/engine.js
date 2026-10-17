@@ -51,7 +51,7 @@ function setMode(m){
 function idleLife(){
   const t=performance.now();
   if(mode==='idle'){
-    if(t-lastAct>45000) setMode('bored');
+    if(false) setMode('bored');
     else{
       const r=Math.random();
       if(r<.28){ setExp('front'); setTimeout(()=>{ if(mode==='idle') setExp('happy'); },1800+Math.random()*1600); }
@@ -65,6 +65,7 @@ function startTurn(k){ if(turn) return; turn=k; turnT=1; setTimeout(()=>{ turnT=
 function blink(){ if(blinkAnim) return; const t0=performance.now();
   blinkAnim=t=>{const d=t-t0; if(d<80) return d/80; if(d<120) return 1; if(d<240) return 1-(d-120)/120; blinkAnim=null; return 0;}; }
 function scheduleBlink(){ setTimeout(()=>{ blink(); if(Math.random()<.18) setTimeout(blink,300); scheduleBlink(); },1800+Math.random()*3600); }
+let jumpT0=-1, rollT0=-1;
 let flapTimer=null, extMouth=false, lastShape=0;
 function mouthFromLevel(v){ const t=performance.now(); if(t-lastShape<70) return; lastShape=t; const ns=v<.06?'smile':v<.22?'line':'o'; if(ns!==mouthShape&&ns==='o'&&Math.random()<.4){ for(const s of 'LR'){ pup[s].vx+=(Math.random()-.5)*2.4; pup[s].vy+=(Math.random()-.5)*2.4; } } mouthShape=ns; }
 function flap(){
@@ -116,6 +117,15 @@ function frame(t){
   const E=EXP[exp]; lidV=k(lidV,E.lid,.12); lidLV=k(lidLV,E.lidL,.3); pS=k(pS,E.p,.15); const lid=0;
   floatAmp=k(floatAmp,reduce?0:(speaking?11:4),.05);
   float=Math.sin(s*(speaking?3.2:1.6))*floatAmp-(speaking?6:0)*(floatAmp/11);
+  let jsq=1;
+  if(jumpT0>=0){ const p=(t-jumpT0)/1000;
+    if(p<0.12){ jsq=1-0.10*(p/0.12); }                                   // crouch
+    else if(p<0.62){ const q=(p-0.12)/0.5; float-=Math.sin(Math.PI*q)*70; jsq=1+0.06*Math.sin(Math.PI*q); }  // jump
+    else if(p<0.8){ const q=(p-0.62)/0.18; jsq=1-0.12*Math.sin(Math.PI*q); }  // squash on landing
+    else jumpT0=-1; }
+  if(rollT0>=0){ const p=(t-rollT0)/1000;
+    if(p<1.6){ const a=p*Math.PI*2*1.5; for(const sd of 'LR'){ const k=sd==='L'?1:-1; pup[sd].vx+=Math.cos(a*k)*1.6*dt; pup[sd].vy+=Math.sin(a)*1.6*dt; } }
+    else rollT0=-1; }
   tilt=k(tilt,tiltT,.06);
   const ang=tilt+(reduce?0:Math.sin(s*.9)*1.2);
   const dT=ang-prevTilt, vel=float-prevFloat, acc=vel-prevVel; prevTilt=ang; prevFloat=float; prevVel=vel;
@@ -148,7 +158,7 @@ function frame(t){
     const main=ctx; lctx.setTransform(1,0,0,1,0,0); lctx.clearRect(0,0,layer.width,layer.height);
     lctx.setTransform(S,0,0,S,-VIEW.x*S,-VIEW.y*S);
     ctx=lctx;
-    ctx.translate(G.face.cx,G.H-10+float); ctx.rotate(rad(ang)); ctx.scale(squish,1); ctx.translate(-G.face.cx,-(G.H-10));
+    ctx.translate(G.face.cx,G.H-10+float); ctx.rotate(rad(ang)); ctx.scale(squish*(2-jsq),jsq); ctx.translate(-G.face.cx,-(G.H-10));
     if(key.startsWith('turn_')){ const L=G[key]; ctx.drawImage(img[key],L.x,L.y,L.w,L.h); } else drawFrame(key,lid,s);
     ctx=main; ctx.save(); ctx.setTransform(1,0,0,1,0,0); ctx.globalAlpha=alpha; ctx.drawImage(layer,0,0); ctx.restore();
   };
@@ -162,6 +172,8 @@ window.CassieFace={
   mood:m=>{ if(EXP[m]) setExp(m); },
   speaking:on=>{ speaking=on; if(on){ setMode('talking'); } else { mouthShape='smile'; setMode('idle'); } },
   level:v=>mouthFromLevel(v),
+  jump:()=>{ if(reduce) return; jumpT0=performance.now(); setTimeout(()=>{ hair.L.v+=5; hair.R.v-=5; for(const sd of 'LR'){ pup[sd].vy+=5; } },650); },
+  rollEyes:()=>{ if(reduce) return; rollT0=performance.now(); },
   giggle:()=>{ setMode('wink'); for(const s of 'LR'){ pup[s].vy-=4; pup[s].vx+=(Math.random()-.5)*4; } hair.L.v-=4; hair.R.v+=4; setTimeout(()=>{ if(mode==='wink') setMode('idle'); },1400); },
   get mode_(){ return mode; }
 };

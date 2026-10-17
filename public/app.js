@@ -23,9 +23,9 @@ function minutesLeft(){ const u=usage(); return (S.limit+u.bonus)-u.seconds/60; 
 // ---------- UI helpers ----------
 const talkBtn=$('talk'), label=$('talklabel'), caption=$('caption');
 const LABELS={idle:'Talk',listening:'I’m listening…',thinking:'Hmm…',speaking:'',sleeping:'Cassie is resting'};
-let state='idle';
+let state='idle', quietSince=Date.now(), idleStage=0;
 function setState(s){
-  state=s; talkBtn.dataset.state=s; label.textContent=LABELS[s]??'';
+  state=s; quietSince=Date.now(); idleStage=0; talkBtn.dataset.state=s; label.textContent=LABELS[s]??'';
   talkBtn.setAttribute('aria-label', s==='listening'?'Stop and send':s==='speaking'?'Interrupt Cassie':'Talk to Cassie');
   const f=face(); if(!f) return;
   if(s==='listening') f.mode('listening');
@@ -120,6 +120,9 @@ function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
 const history=[];
 // ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
 const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Hmm, let me think!'];
+const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
+const calloutBufs={};
+async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t)}); }catch(e){} } }
 const fillerBufs={};  // voice -> [AudioBuffer]
 async function fetchAudio(text){
   const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice})});
@@ -161,7 +164,7 @@ async function cassieReplies(isStart){
   const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:history.slice(-16),minutesLeft:minutesLeft(),start:isStart})});
   const {say:text,mood}=await r.json();
   history.push({role:'assistant',content:text});
-  loadFillers();
+  loadFillers().then(loadCallouts);
   await speakReply(text,mood);
 }
 // split into a short first part (so she can start talking sooner) and the rest
@@ -201,6 +204,29 @@ function interrupt(){ playToken++; if(currentSource){ try{ currentSource.onended
 
 function goToSleep(){ markActive(false); setState('sleeping'); say('That’s all our Cassie time for today. Let’s play again tomorrow!'); }
 
+// ---------- when nobody is talking: be silly, call out once, then get sleepy ----------
+let calloutsDone=0;
+function playCallout(){
+  const list=calloutBufs[S.voice]; if(!list||!list.length||!ac) return false;
+  const {t,b}=list[calloutsDone%list.length];
+  const src=ac.createBufferSource(); src.buffer=b; const an=ac.createAnalyser(); an.fftSize=512; src.connect(an); an.connect(ac.destination);
+  const buf=new Float32Array(an.fftSize), f=face(); let run=true;
+  f.speaking(true); f.mood('surprise'); say(t);
+  const loop=()=>{ if(!run) return; an.getFloatTimeDomainData(buf); let x=0; for(let i=0;i<buf.length;i++) x+=buf[i]*buf[i]; f.level(Math.min(1,Math.sqrt(x/buf.length)*4)); requestAnimationFrame(loop); };
+  src.onended=()=>{ run=false; f.speaking(false); };   // not counted in William's daily time
+  src.start(); loop(); return true;
+}
+setInterval(()=>{
+  if(state!=='idle'||document.hidden) return;
+  if(!$('parent').hidden||!$('gate').hidden||!$('setup').hidden) return;
+  const q=(Date.now()-quietSince)/1000, f=face(); if(!f) return;
+  if(idleStage===0&&q>25){ idleStage=1; Math.random()<.5?f.jump():f.rollEyes(); }
+  else if(idleStage===1&&q>50){ idleStage=2; if(started&&calloutsDone<2&&playCallout()) calloutsDone++; else f.jump(); }
+  else if(idleStage===2&&q>65){ idleStage=3; f.rollEyes(); }
+  else if(idleStage===3&&q>90){ idleStage=4; f.mode('sleepy'); say('Zzz… tap me to wake me up!',true); }
+},1000);
+document.addEventListener('pointerdown',()=>{ if(state==='idle'){ if(idleStage>=4){ face().mode('idle'); say('',true); } quietSince=Date.now(); idleStage=0; } },true);
+
 // ---------- the big button ----------
 let started=false;
 talkBtn.addEventListener('click',async ()=>{
@@ -219,7 +245,7 @@ talkBtn.addEventListener('click',async ()=>{
   }
   startListening(false);
 });
-$('cv').addEventListener('click',()=>{ if(state==='idle'||state==='sleeping') face().giggle(); });
+$('cv').addEventListener('click',()=>{ if(state==='idle'||state==='sleeping'){ Math.random()<.4?face().jump():face().giggle(); } });
 
 // ---------- family code ----------
 function openSetup(){ $('codeIn').value=S.code; $('setupErr').textContent=''; $('setup').hidden=false; setTimeout(()=>$('codeIn').focus(),50); }
