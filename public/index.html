@@ -58,10 +58,10 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:h
 .ic-dots circle:nth-child(2){animation-delay:.15s}.ic-dots circle:nth-child(3){animation-delay:.3s}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .talklabel{font-family:var(--display);font-weight:700;font-size:1.15rem;color:var(--clay-deep);min-height:1.4em}
-.parentbtn{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
+.parentbtn{z-index:10;touch-action:manipulation;-webkit-touch-callout:none;position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
 .parentbtn svg{width:22px;height:22px}
-.parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);clip-path:inset(0 100% 0 0);transition:clip-path 0s}
-.parentbtn.holding .prog{clip-path:inset(0 0 0 0);transition:clip-path 1.6s linear}
+.parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);opacity:0}
+.parentbtn.tap1 .prog{opacity:.35}.parentbtn.tap2 .prog{opacity:.75}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--clay-deep);outline-offset:3px}
 /* overlays */
 .sheet{position:fixed;inset:0;background:rgba(58,42,74,.32);display:flex;align-items:flex-end;justify-content:center;z-index:20}
@@ -113,7 +113,7 @@ input[type=number]{width:90px}
   </div>
 </div>
 
-<button class="parentbtn" id="parentBtn" type="button" aria-label="Grown-ups: press and hold">
+<button class="parentbtn" id="parentBtn" type="button" aria-label="Grown-ups: tap three times">
   <span class="prog"></span>
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
 </button>

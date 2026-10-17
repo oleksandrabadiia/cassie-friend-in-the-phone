@@ -200,11 +200,14 @@ $('setupForm').addEventListener('submit',async e=>{
 });
 
 // ---------- grown-up gate: press and hold, then a sum ----------
-const pb=$('parentBtn'); let holdT=null, gateAns=0;
-const startHold=e=>{ e.preventDefault(); pb.classList.add('holding'); holdT=setTimeout(()=>{ pb.classList.remove('holding'); openGate(); },1600); };
-const endHold=()=>{ pb.classList.remove('holding'); clearTimeout(holdT); };
-pb.addEventListener('pointerdown',startHold); ['pointerup','pointerleave','pointercancel'].forEach(ev=>pb.addEventListener(ev,endHold));
-pb.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' ') openGate(); });
+const pb=$('parentBtn'); let gateAns=0, taps=[];
+// grown-up entry: tap the cog 3 times quickly (iPhone cancels long presses), then answer a sum
+pb.addEventListener('click',e=>{
+  e.preventDefault();
+  const t=Date.now(); taps=taps.filter(x=>t-x<1500); taps.push(t);
+  pb.classList.remove('tap1','tap2'); if(taps.length<3) pb.classList.add('tap'+taps.length);
+  if(taps.length>=3){ taps=[]; openGate(); }
+});
 function openGate(){
   const a=6+Math.floor(Math.random()*7), b=5+Math.floor(Math.random()*8);
   const useTimes=Math.random()<.5; gateAns=useTimes?a*b:a+b+10;
