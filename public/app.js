@@ -34,6 +34,8 @@ function setState(s){
   else if(s==='idle') f.mode('idle');
 }
 function say(text,small){ caption.classList.toggle('small',!!small); caption.textContent=(S.showWords||small)?text:''; caption.scrollTop=0; }
+function applyWords(){ document.body.classList.toggle('nowords',!S.showWords); dispatchEvent(new Event('resize')); }
+applyWords();
 // while Cassie talks, gently scroll long captions so the current bit is visible
 let capScroll=null;
 function scrollCaption(seconds){ clearInterval(capScroll); caption.scrollTop=0; const max=caption.scrollHeight-caption.clientHeight; if(max<=4) return; const t0=performance.now(); capScroll=setInterval(()=>{ const p=Math.min(1,(performance.now()-t0)/(seconds*1000)); caption.scrollTop=max*Math.max(0,(p-.25)/.75); if(p>=1) clearInterval(capScroll); },100); }
@@ -320,7 +322,7 @@ async function openParent(){
 $('limitIn').addEventListener('change',()=>{ const v=Math.max(5,Math.min(120,parseInt($('limitIn').value,10)||20)); S.limit=v; store.set('limit',v); $('limitIn').value=v; if(state==='sleeping'&&minutesLeft()>0) setState('idle'); });
 $('plus10').addEventListener('click',()=>{ const u=usage(); u.bonus+=10; saveUsage(u); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min'; if(state==='sleeping') { setState('idle'); say('',true); } });
 $('handsFree').addEventListener('click',()=>{ S.handsFree=!S.handsFree; store.set('handsFree',S.handsFree); setToggle($('handsFree'),S.handsFree); });
-$('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); });
+$('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); applyWords(); });
 const VOICES=[
   ['marin','Marin','OpenAI · soft and natural'],['shimmer','Shimmer','OpenAI · light and bright'],['sage','Sage','OpenAI · calm and kind'],['coral','Coral','OpenAI · warm and friendly'],
   ['nova','Nova','OpenAI · cheerful'],['fable','Fable','OpenAI · storyteller'],['alloy','Alloy','OpenAI · clear'],['ballad','Ballad','OpenAI · soft and dreamy'],
