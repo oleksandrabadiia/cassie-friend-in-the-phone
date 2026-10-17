@@ -8,7 +8,9 @@ export function checkCode(req: Request): Response | null {
   const expected = Netlify.env.get("CASSIE_FAMILY_CODE");
   const got = req.headers.get("x-cassie-code") || "";
   if (!expected) return json({ error: "Family code is not set up on the server yet." }, 500);
-  if (got.trim().toLowerCase() !== expected.trim().toLowerCase()) return json({ error: "wrong-code" }, 401);
+  // forgiving: ignore capitals, spaces and any kind of dash or punctuation
+  const norm = (s: string) => s.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!norm(got) || norm(got) !== norm(expected)) return json({ error: "wrong-code" }, 401);
   return null;
 }
 

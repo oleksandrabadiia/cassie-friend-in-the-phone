@@ -188,7 +188,7 @@ $('cv').addEventListener('click',()=>{ if(state==='idle'||state==='sleeping') fa
 function openSetup(){ $('codeIn').value=S.code; $('setupErr').textContent=''; $('setup').hidden=false; setTimeout(()=>$('codeIn').focus(),50); }
 $('setupForm').addEventListener('submit',async e=>{
   e.preventDefault();
-  const code=$('codeIn').value.trim().toLowerCase(); if(!code) return;
+  const code=$('codeIn').value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g,''); if(!code) return;
   $('setupErr').textContent='Checking…';
   try{
     const r=await fetch('/api/status',{headers:{'x-cassie-code':code}});
