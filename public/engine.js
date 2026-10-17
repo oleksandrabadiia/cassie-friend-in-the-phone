@@ -3,7 +3,7 @@ const G={"W": 520, "H": 470, "face": {"cx": 269.5931701660156, "cy": 298.3185119
 const SRC={"face_talk": "/img/face_talk.webp", "hairL_talk": "/img/hairL_talk.webp", "hairR_talk": "/img/hairR_talk.webp", "pupil_talkL": "/img/pupil_talkL.webp", "pupil_talkR": "/img/pupil_talkR.webp", "turn_q_left": "/img/turn_q_left.webp", "turn_q_right": "/img/turn_q_right.webp", "shadow": "/img/shadow.webp", "mouth_o": "/img/mouth_o.webp", "mouth_line": "/img/mouth_line.webp", "mouth_smile": "/img/mouth_smile.webp", "mouth_frown": "/img/mouth_frown.webp"};
 const $=id=>document.getElementById(id);
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const VIEW={x:0,y:0,w:G.W,h:G.H+40};
+const VIEW={x:0,y:-90,w:G.W,h:G.H+40+90};
 const img={};
 Promise.all(Object.entries(SRC).map(([k,s])=>new Promise(res=>{const i=new Image();i.onload=()=>{img[k]=i;res();};i.onerror=res;i.src=s;}))).then(start);
 const cv=$('cv'),stage=$('stage'); let ctx=cv.getContext('2d');
