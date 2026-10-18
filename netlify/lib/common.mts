@@ -73,6 +73,6 @@ export function profileSummary(p: Profile): string {
   if (pr.length) parts.push("Sounds/skills William has practised successfully: " + pr.join(", ") + ".");
   if (tr.length) parts.push("Sounds/skills he finds tricky (practise gently, without pressure): " + tr.join(", ") + ".");
   if (p.likes.length) parts.push("Things he has enjoyed: " + p.likes.slice(-10).join(", ") + ".");
-  if (p.memories?.length) parts.push("Notes from earlier chats (newest last):\n- " + p.memories.slice(-25).join("\n- "));
+  if (p.memories?.length) parts.push("Notes from earlier chats, dated (newest last). Don't repeat these games, jokes, facts or ideas; build on them instead:\n- " + p.memories.slice(-45).join("\n- "));
   return parts.length ? "SAVED LEARNING PROFILE\n" + parts.join("\n") : "SAVED LEARNING PROFILE\nNothing saved yet.";
 }

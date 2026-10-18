@@ -25,11 +25,11 @@ const PRICE: Record<string, [number, number]> = { "gpt-4.1-mini": [0.4, 1.6], "g
 
 const TOPICS: Record<string, string> = {
   maths: "William just tapped the MATHS button. Start a fun little counting or simple maths game right now (counting objects, one more/one less, simple adding with superheroes, dinosaurs or sweets). One question at a time.",
-  phonics: "William just tapped the PHONICS button. Start a short superhero or dinosaur phonics mission now, using his Phase 3 sounds and the saved profile. One sound at a time.",
+  phonics: "William just tapped the PHONICS button. Start a short, funny phonics mission now with a character you have not used recently (dinosaur, Loly and Pop, a Hogwarts owl, a pirate, a robot, a pumpkin… never superheroes), using his Phase 3 sounds and the saved profile. One sound at a time.",
   world: "William just tapped the WORLD button. Share one amazing, simple fact about the world (countries, oceans, weather, volcanoes, people) and ask him a playful question about it.",
   animals: "William just tapped the ANIMALS button. Play an animal game: a 'which animal am I?' riddle, animal sounds, or an amazing animal fact. Keep it short.",
   quiz: "William just tapped the QUIZ button. Run a quick, easy quiz for a five-year-old, one question at a time, celebrating effort.",
-  draw: "William just tapped the DRAW button. Suggest something fun and specific for him to draw (a silly monster, a dinosaur in a rocket, his own superhero), then ask him to describe it to you as he draws.",
+  draw: "William just tapped the DRAW button. Suggest one specific, unexpected drawing or craft idea from your drawing list that you have not suggested before (check the notes), explain the first tiny step, then ask him to describe it as he goes.",
   space: "William just tapped the SPACE button. Start a space adventure or share a simple space fact (planets, the Moon, rockets, astronauts) and ask one question.",
   dinos: "William just tapped the DINOSAURS button. Start a dinosaur game or adventure: roaring contest, 'guess the dinosaur', or a fact about T. rex, Triceratops or Stegosaurus. One thing at a time.",
   cars: "William just tapped the CARS button. Talk cars, racing cars, diggers, trains or monster trucks: a tiny race story or a 'what sound does it make' game.",
@@ -37,6 +37,17 @@ const TOPICS: Record<string, string> = {
   heroes: "William just tapped the SUPERHEROES button. Start a short superhero mission with Spider-Man, Batman, Superman or a hero he invents, and weave a little counting or a phonics sound into it.",
   surprise: "William just tapped the SURPRISE button. Pick something unexpected from his interests that you haven't done recently, preferably a learning game dressed up as fun, and jump straight in.",
 };
+// What's coming up, so Cassie can talk about Halloween, birthdays and Christmas at the right time.
+function upcoming(): string {
+  const uk = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/London" }));
+  const y = uk.getFullYear();
+  const days = (m: number, d: number) => { let t = new Date(y, m - 1, d); if (t < uk) t = new Date(y + 1, m - 1, d); return Math.round((t.getTime() - uk.getTime()) / 864e5); };
+  const list: [string, number][] = [["Halloween", days(10, 31)], ["Bonfire Night (fireworks)", days(11, 5)], ["Daddy's birthday (James, 10 December) — help William plan and make a birthday card for Daddy", days(12, 10)], ["William's birthday (he turns " + (y - 2020 + (uk.getMonth() === 11 && uk.getDate() > 20 ? 1 : 0)) + ")", days(12, 20)], ["Christmas Day", days(12, 25)], ["New Year's Day", days(1, 1)], ["Valentine's Day", days(2, 14)], ["Pancake Day-ish / spring", days(3, 1)], ["Easter-time (spring)", days(4, 5)]];
+  const soon = list.filter(([, d]) => d <= 45).sort((a, b) => a[1] - b[1]);
+  if (!soon.length) return "";
+  return "Coming up: " + soon.map(([n, d]) => `${n} in ${d === 0 ? "0 days (TODAY!)" : d + " days"}`).join("; ") + ". Mention these naturally now and then, not every reply.";
+}
+
 export async function think(key: string, body: any): Promise<{ say: string; mood: string }> {
   return thinkStream(key, body, () => {});
 }
@@ -50,6 +61,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
   const now = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
   const situation = [
     `It is ${now} (UK time).`,
+    upcoming(),
     body.start ? "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only." : "",
     body.topic ? TOPICS[body.topic] || "" : "",
     body.parent ? "PARENT MODE IS ON: a grown-up (William's mum Ara or dad James) is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Grown-up speaking) are theirs." : "",
@@ -121,7 +133,11 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
       const norm = (a: any) => (Array.isArray(a) ? a : []).map((x: any) => String(x).toLowerCase().trim()).filter((x: string) => x && x.length < 40).slice(0, 6);
       const pr = norm(out.practised), tr = norm(out.tricky), lk = norm(out.likes);
       const mem = (Array.isArray(out.remember) ? out.remember : []).map((x: any) => String(x).trim()).filter((x: string) => x && x.length < 160).slice(0, 2);
-      if (mem.length) { for (const m of mem) if (!profile.memories.includes(m)) profile.memories.push(m); profile.memories = profile.memories.slice(-60); }
+      if (mem.length) {
+        const stamp = new Date().toLocaleDateString("en-GB", { timeZone: "Europe/London", day: "numeric", month: "short" });
+        for (const m of mem) if (!profile.memories.some(x => x.endsWith(m))) profile.memories.push(`${stamp}: ${m}`);
+        profile.memories = profile.memories.slice(-120);
+      }
       if (pr.length || tr.length || lk.length || mem.length) {
         for (const s of pr) profile.practised[s] = (profile.practised[s] || 0) + 1;
         for (const s of tr) profile.tricky[s] = (profile.tricky[s] || 0) + 1;

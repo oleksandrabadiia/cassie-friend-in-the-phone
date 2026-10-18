@@ -89,3 +89,8 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
 - Cheapest viable setup; GPT-Live rejected as too expensive (~£12–25/mo).
 - Topic tiles: maths, phonics, world, animals, quiz, draw, space, dinos, cars, story, heroes, surprise.
 - Button press feedback: violet contour glow.
+- Superheroes: never Cassie's suggestion, and never in phonics (use dinosaurs, Loly & Pop the guinea pigs, Hogwarts owls, pirates…).
+- William loves Harry Potter (books + all films) — fun/magical side only.
+- Reactions she should use: "Gotcha!", "Wow!", "Love it!", "Cheeky monkey!"; jokes often; "Ooh" rarely.
+- Memories are dated (`18 Oct: …`), last 45 shown to the brain, so she doesn't repeat games/jokes day to day.
+- `upcoming()` in brain.mts tells her about events within 45 days: Halloween, Bonfire Night, Daddy's (James) birthday 10 Dec — make a card —, William's birthday 20 Dec, Christmas, etc.
