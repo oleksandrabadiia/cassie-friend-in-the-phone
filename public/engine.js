@@ -169,7 +169,7 @@ function frame(t){
 function start(){ resize(); setMode('idle'); setTimeout(idleLife,2500); requestAnimationFrame(frame); document.dispatchEvent(new Event('cassie-ready')); }
 window.CassieFace={
   mode:m=>setMode(m),
-  mood:m=>{ if(EXP[m]) setExp(m); },
+  mood:m=>{ const map={story:'front',gentle:'front',excited:'happy'}; m=map[m]||m; if(EXP[m]) setExp(m); },
   speaking:on=>{ speaking=on; if(on){ setMode('talking'); } else { mouthShape='smile'; setMode('idle'); } },
   level:v=>mouthFromLevel(v),
   jump:()=>{ if(reduce) return; jumpT0=performance.now(); setTimeout(()=>{ hair.L.v+=5; hair.R.v-=5; for(const sd of 'LR'){ pup[sd].vy+=5; } },650); },

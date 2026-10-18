@@ -4,7 +4,18 @@ import { checkCode, json, openaiKey, addUsage, overBudget } from "../lib/common.
 
 const GOOGLE_VOICES = new Set(["en-GB-Chirp3-HD-Aoede", "en-GB-Chirp3-HD-Kore", "en-GB-Chirp3-HD-Leda", "en-GB-Chirp3-HD-Zephyr", "en-GB-Chirp3-HD-Sulafat", "en-GB-Chirp3-HD-Achernar"]);
 const VOICES = new Set(["coral", "shimmer", "sage", "nova", "fable", "alloy", "ballad", "verse", "marin", "cedar"]);
-const STYLE = "You are Cassie, a warm, soft, gentle young British woman with a smile in your voice, talking to a five-year-old boy. Speak calmly and clearly, a little slower than normal, playful and kind, never shouty. Stretchy phonics sounds like mmm or sss should be held gently.";
+const BASE = "You are Cassie, a warm, playful young British woman with a smile in your voice, talking to William, a five-year-old boy. British accent. Natural, lively and expressive, like a fun big sister, never flat and never like reading aloud. Clear and a touch slower than adult pace. Stretchy phonics sounds like mmm or sss are held gently. ";
+const STYLES: Record<string, string> = {
+  front: BASE + "Friendly, relaxed, interested.",
+  happy: BASE + "Delighted and giggly, bubbling with warmth, little laughs in the voice.",
+  surprise: BASE + "Amazed! Big gasp of excitement, eyes-wide wonder, rising pitch.",
+  think: BASE + "Curious and wondering, slower, thoughtful hmm-ing, like puzzling something out together.",
+  wink: BASE + "Cheeky and teasing, holding back a giggle, playful comic timing, pause before the punchline.",
+  tired: BASE + "Soft, calm and sleepy-cosy, slower, hushed bedtime-story voice.",
+  story: BASE + "Storyteller: dramatic and hushed in the suspense, bright in the fun bits, doing little voices for characters.",
+  gentle: BASE + "Very gentle and reassuring, slow and kind, like comforting a friend.",
+  excited: BASE + "Super excited, fast and bouncy, cheering him on.",
+};
 
 export default async (req: Request, _ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
@@ -14,6 +25,7 @@ export default async (req: Request, _ctx: Context) => {
   const body: any = await req.json().catch(() => ({}));
   const text = String(body.text || "").slice(0, 600);
   if (!text) return json({ error: "no-text" }, 400);
+  const style = STYLES[String(body.mood || "")] || STYLES.front;
 
   // Google voices (free allowance of 1 million characters a month)
   if (typeof body.voice === "string" && body.voice.startsWith("g:")) {
@@ -38,7 +50,7 @@ export default async (req: Request, _ctx: Context) => {
   const voice = VOICES.has(body.voice) ? body.voice : "marin";
 
   const attempts = [
-    { model: "gpt-4o-mini-tts", voice, input: text, instructions: STYLE, response_format: "mp3" },
+    { model: "gpt-4o-mini-tts", voice, input: text, instructions: style, response_format: "mp3" },
     { model: "tts-1", voice: ["shimmer", "nova", "fable", "alloy", "coral", "sage"].includes(voice) ? voice : "shimmer", input: text, response_format: "mp3", speed: 0.95 },
   ];
   for (const a of attempts) {

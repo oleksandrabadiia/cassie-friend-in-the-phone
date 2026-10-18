@@ -112,7 +112,7 @@ async function startListening(auto){
     else{
       const thr=Math.max(0.018,noise*3);
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
-      if(recInfo.heard&&t-lastLoud>800) return stopListening();
+      if(recInfo.heard&&t-lastLoud>650) return stopListening();
       if(!recInfo.heard&&t>(auto?7000:9000)){ recInfo.cancelled=true; return stopListening(); }
       if(t>20000) return stopListening();
     }
@@ -127,10 +127,10 @@ const history=[];
 const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Let me think…','Oh yeah!','Nice!','Wow!','Gotcha!','Aha!','Ha!','Ooh, good one!','Right…','Hmm, let me see…','Oh! Okay, okay…','Brilliant!'];
 const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
 const calloutBufs={};
-async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t)}); }catch(e){} } }
+async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t,'wink')}); }catch(e){} } }
 const fillerBufs={};  // voice -> [AudioBuffer]
-async function fetchAudio(text){
-  const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice})});
+async function fetchAudio(text,mood){
+  const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice,mood:mood||'front'})});
   const bytes=await r.arrayBuffer(); const ctx=audioCtx();
   return await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
 }
@@ -138,7 +138,7 @@ async function loadFillers(){
   const v=S.voice; if(fillerBufs[v]) return;
   fillerBufs[v]=[];
   const list=FILLERS.slice().sort(()=>Math.random()-.5);
-  for(let i=0;i<list.length;i+=3){ await Promise.all(list.slice(i,i+3).map(async t=>{ try{ fillerBufs[v].push(await fetchAudio(t)); }catch(e){} })); }
+  for(let i=0;i<list.length;i+=3){ await Promise.all(list.slice(i,i+3).map(async t=>{ try{ fillerBufs[v].push(await fetchAudio(t,'think')); }catch(e){} })); }
 }
 let lastFiller=null;
 function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return null; let b; do{ b=l[Math.floor(Math.random()*l.length)]; }while(l.length>1&&b===lastFiller); lastFiller=b; return b; }
@@ -184,7 +184,7 @@ function splitFirst(text){
 }
 async function speakReply(text,mood){
   const parts=splitFirst(text);
-  const bufsP=parts.map(p=>fetchAudio(p));   // make all parts at the same time
+  const bufsP=parts.map(p=>fetchAudio(p,mood));   // make all parts at the same time
   say(text); scrollCaption(Math.max(3,text.length/14));
   const token=++playToken;
   for(let i=0;i<parts.length;i++){

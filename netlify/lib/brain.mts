@@ -20,7 +20,7 @@ export async function transcribe(key: string, audio: File, seconds: number): Pro
   throw new OpenAIError("hear-failed", 502);
 }
 
-const MOODS = new Set(["happy", "front", "think", "surprise", "wink", "tired"]);
+const MOODS = new Set(["happy", "front", "think", "surprise", "wink", "tired", "story", "gentle", "excited"]);
 const PRICE: Record<string, [number, number]> = { "gpt-4.1-mini": [0.4, 1.6], "gpt-4o-mini": [0.15, 0.6], "gpt-5-mini": [0.25, 2] };
 
 const TOPICS: Record<string, string> = {
@@ -61,7 +61,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
   const models = [Netlify.env.get("CASSIE_MODEL"), "gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini"].filter(Boolean) as string[];
   for (const model of models) {
     const payload: any = { model, messages, response_format: { type: "json_object" } };
-    if (!model.startsWith("gpt-5")) { payload.temperature = 0.8; payload.max_tokens = 300; } else { payload.max_completion_tokens = 900; payload.reasoning_effort = "minimal"; }
+    if (!model.startsWith("gpt-5")) { payload.temperature = 0.9; payload.max_tokens = 220; } else { payload.max_completion_tokens = 900; payload.reasoning_effort = "minimal"; }
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(payload),
     });
