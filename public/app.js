@@ -206,6 +206,15 @@ async function startListening(auto,opts={}){
 function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
 
 const history=[];
+// a grown-up announcing themselves ("it's Mummy here", "Daddy speaking", "it's Ara") switches Cassie to Parent Mode
+let parentMode=false;
+const PARENT_ON=/^(?:(?:hi|hello|hey|cassie|okay|ok|um|so|right)[,!.\s]*){0,4}(?:it'?s\s+|this is\s+)?(?:william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b[^.?!]{0,8}\b(here|hear|speaking|talking|calling)\b|\b(it'?s|this is|hi,? it'?s|hello,? it'?s)\s+(william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b|\bparent mode\b|\bwilliam'?s (mum|mom|dad)\b/i;
+const PARENT_OFF=/back to william|william'?s (here|back|turn)|william is (here|back)|over to william/i;
+function checkParent(heard){
+  if(!heard) return;
+  if(parentMode&&PARENT_OFF.test(heard)){ parentMode=false; }
+  else if(!parentMode&&PARENT_ON.test(heard)){ parentMode=true; }
+}
 // ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
 const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Let me think…','Oh yeah!','Nice!','Wow!','Gotcha!','Aha!','Ha!','Ooh, good one!','Right…','Hmm, let me see…','Oh! Okay, okay…','Brilliant!'];
 const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
@@ -238,19 +247,21 @@ async function onRecorded(){
     let heard=info.live?await Ears.finish(2500):null;
     if(token!==playToken) return;
     if(heard!==null){
-      history.push({role:'user',content:heard||'(William said something but it was too quiet or unclear to hear.)'});
+      checkParent(heard);
+      history.push({role:'user',content:(parentMode?'(Grown-up speaking) ':'')+(heard||'(William said something but it was too quiet or unclear to hear.)')});
       await talkStream({text:heard,heardSeconds:seconds},token);
     }else{
       // 2) the slower way: send the recording up and wait for the whole answer
       const blob=new Blob(chunks,{type:info.mime});
       const ext=info.mime.includes('webm')?'webm':info.mime.includes('ogg')?'ogg':'m4a';
       const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
-      fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft()}));
+      fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft(),parent:parentMode}));
       const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
       const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
       const {heard:h,say:text,mood}=await turnP;
       if(token!==playToken) return;
-      history.push({role:'user',content:h||'(William said something but it was too quiet or unclear to hear.)'});
+      checkParent(h);
+      history.push({role:'user',content:(parentMode?'(Grown-up speaking) ':'')+(h||'(William said something but it was too quiet or unclear to hear.)')});
       history.push({role:'assistant',content:text});
       await fillerDone;
       await speakReply(text,mood,token);
@@ -269,7 +280,7 @@ async function cassieReplies(isStart,topic){
 }
 // Cassie's words arrive bit by bit; each finished sentence is voiced and played while the next is still being written
 async function talkStream(req,token){
-  const body=Object.assign({messages:history.slice(-16),minutesLeft:minutesLeft()},req);
+  const body=Object.assign({messages:history.slice(-16),minutesLeft:minutesLeft(),parent:parentMode},req);
   const r=await api('/api/talk',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const reader=r.body.getReader(), dec=new TextDecoder();
   const sp=new Speaker(token); let pending='', text='', spoken=0, final=null;
@@ -335,18 +346,24 @@ async function speakReply(text,mood,token){
   face().speaking(false);
   afterReply();
 }
+// loudness of a clip every 25 ms, worked out from the sound itself (so the mouth always matches, on every phone)
+function envelope(audio){
+  if(audio.__env) return audio.__env;
+  const d=audio.getChannelData(0), step=Math.max(1,Math.floor(audio.sampleRate*0.025)), env=[];
+  for(let i=0;i<d.length;i+=step){ let s=0; const n=Math.min(step,d.length-i); for(let j=0;j<n;j+=4) s+=d[i+j]*d[i+j]; env.push(Math.sqrt(s/(n/4))); }
+  return audio.__env=env;
+}
 function playBuffer(audio,mood,opts={}){
   const ctx=audioCtx();
-  const src=ctx.createBufferSource(); src.buffer=audio;
-  const an=ctx.createAnalyser(); an.fftSize=512; src.connect(an); an.connect(ctx.destination);
-  const buf=new Float32Array(an.fftSize);
+  const src=ctx.createBufferSource(); src.buffer=audio; src.connect(ctx.destination);
+  const env=envelope(audio);
   currentSource=src;
   if(!opts.keepThinking){ setState('speaking'); }
   markActive(true);
   const f=face(); f.speaking(true); if(mood&&mood!=='front') f.mood(mood);
-  let running=true;
-  const loop=()=>{ if(!running) return; an.getFloatTimeDomainData(buf); let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i]; f.level(Math.min(1,Math.sqrt(s/buf.length)*4)); requestAnimationFrame(loop); };
-  return new Promise(res=>{ src.onended=()=>{ running=false; if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src) currentSource=null; res(); }; src.start(); loop(); });
+  let running=true; const t0=ctx.currentTime;
+  const loop=()=>{ if(!running) return; const i=Math.floor((ctx.currentTime-t0)/0.025); f.level(Math.min(1,(env[i]||0)*4)); requestAnimationFrame(loop); };
+  return new Promise(res=>{ src.onended=()=>{ running=false; f.level(0); if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src) currentSource=null; res(); }; src.start(); loop(); });
 }
 function interrupt(){ playToken++; if(currentSource){ try{ currentSource.onended=null; currentSource.stop(); }catch(e){} currentSource=null; face().speaking(false); } }
 
@@ -369,10 +386,10 @@ let calloutsDone=0;
 function playCallout(){
   const list=calloutBufs[S.voice]; if(!list||!list.length||!ac) return false;
   const {t,b}=list[calloutsDone%list.length];
-  const src=ac.createBufferSource(); src.buffer=b; const an=ac.createAnalyser(); an.fftSize=512; src.connect(an); an.connect(ac.destination);
-  const buf=new Float32Array(an.fftSize), f=face(); let run=true;
+  const src=ac.createBufferSource(); src.buffer=b; src.connect(ac.destination);
+  const env=envelope(b), f=face(); let run=true; const t0=ac.currentTime;
   f.speaking(true); f.mood('surprise'); say(t);
-  const loop=()=>{ if(!run) return; an.getFloatTimeDomainData(buf); let x=0; for(let i=0;i<buf.length;i++) x+=buf[i]*buf[i]; f.level(Math.min(1,Math.sqrt(x/buf.length)*4)); requestAnimationFrame(loop); };
+  const loop=()=>{ if(!run) return; const i=Math.floor((ac.currentTime-t0)/0.025); f.level(Math.min(1,(env[i]||0)*4)); requestAnimationFrame(loop); };
   src.onended=()=>{ run=false; f.speaking(false); };   // not counted in William's daily time
   src.start(); loop(); return true;
 }

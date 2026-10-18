@@ -13,8 +13,8 @@ export default async (req: Request, _ctx: Context) => {
   try {
     const heard = await transcribe(key, form.get("audio") as File, seconds);
     const messages = (Array.isArray(meta.messages) ? meta.messages : []).slice(-15);
-    messages.push({ role: "user", content: heard || "(William said something but it was too quiet or unclear to hear.)" });
-    const reply = await think(key, { messages, minutesLeft: meta.minutesLeft });
+    messages.push({ role: "user", content: (meta.parent ? "(Grown-up speaking) " : "") + (heard || "(William said something but it was too quiet or unclear to hear.)") });
+    const reply = await think(key, { messages, minutesLeft: meta.minutesLeft, parent: !!meta.parent });
     return json({ heard, ...reply });
   } catch (e: any) { return json({ error: e instanceof OpenAIError ? e.code : "turn-failed" }, e?.status || 502); }
 };

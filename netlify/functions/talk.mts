@@ -11,7 +11,7 @@ export default async (req: Request, _ctx: Context) => {
   if (await overBudget()) return json({ error: "budget" }, 402);
   const body: any = await req.json().catch(() => ({}));
   const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-15);
-  if (typeof body.text === "string") messages.push({ role: "user", content: body.text.trim() || "(William said something but it was too quiet or unclear to hear.)" });
+  if (typeof body.text === "string") messages.push({ role: "user", content: (body.parent ? "(Grown-up speaking) " : "") + (body.text.trim() || "(William said something but it was too quiet or unclear to hear.)") });
   const heardSeconds = Math.min(60, Number(body.heardSeconds) || 0);
   const enc = new TextEncoder();
   const stream = new ReadableStream({

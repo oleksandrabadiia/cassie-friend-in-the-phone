@@ -2,7 +2,7 @@
 import { addUsage, getProfile, saveProfile, profileSummary } from "./common.mts";
 import { CASSIE_PROMPT, FORMAT_RULES } from "./prompt.mts";
 
-const HINT = "A five-year-old British boy called William talking to Cassie, his friend in the phone. Spider-Man, Batman, Superman, superheroes, phonics sounds like sss, mmm, ch, sh, th.";
+const HINT = "A five-year-old British boy called William talking to Cassie, his friend in the phone. Sometimes his mum Ara or dad James: 'Cassie, it's Mummy here', 'Daddy speaking', 'it's Ara', 'back to William'. Luka, Loly and Pop, dinosaurs, Spider-Man, phonics sounds like sss, mmm, ch, sh, th.";
 export class OpenAIError extends Error { constructor(public code: string, public status: number) { super(code); } }
 
 export async function transcribe(key: string, audio: File, seconds: number): Promise<string> {
@@ -52,6 +52,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
     `It is ${now} (UK time).`,
     body.start ? "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only." : "",
     body.topic ? TOPICS[body.topic] || "" : "",
+    body.parent ? "PARENT MODE IS ON: a grown-up (William's mum Ara or dad James) is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Grown-up speaking) are theirs." : "",
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
 
