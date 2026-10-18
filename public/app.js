@@ -255,6 +255,7 @@ talkBtn.addEventListener('click',async ()=>{
   }
   startListening(false);
 });
+document.querySelectorAll('.topic, .talk').forEach(b=>b.addEventListener('pointerdown',()=>{ b.classList.add('pressed'); setTimeout(()=>b.classList.remove('pressed'),350); }));
 document.querySelectorAll('.topic').forEach(b=>b.addEventListener('click',async ()=>{
   audioCtx(); if(!S.code){ openSetup(); return; }
   if(state==='sleeping'||minutesLeft()<=0) return goToSleep();
