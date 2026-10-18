@@ -12,7 +12,6 @@ const S={
   code:store.get('code',''),
   limit:store.get('limit',20),
   handsFree:store.get('handsFree',true),
-  showWords:store.get('showWords',true),
   voice:store.get('voice','marin'),
   liveEars:store.get('liveEars',true),
   bargeIn:store.get('bargeIn',true),
@@ -24,7 +23,7 @@ function saveUsage(u){ store.set('usage',u); }
 function minutesLeft(){ const u=usage(); return (S.limit+u.bonus)-u.seconds/60; }
 
 // ---------- UI helpers ----------
-const talkBtn=$('talk'), label=$('talklabel'), caption=$('caption');
+const talkBtn=$('talk'), label=$('talklabel');
 const LABELS={idle:'Talk',listening:'I’m listening…',thinking:'Hmm…',speaking:'',sleeping:'Cassie is resting'};
 let state='idle', quietSince=Date.now(), idleStage=0;
 function setState(s){
@@ -36,12 +35,11 @@ function setState(s){
   else if(s==='sleeping') f.mode('sleepy');
   else if(s==='idle') f.mode('idle');
 }
-function say(text,small){ caption.classList.toggle('small',!!small); caption.textContent=(S.showWords||small)?text:''; caption.scrollTop=0; }
-function applyWords(){ document.body.classList.toggle('nowords',!S.showWords); dispatchEvent(new Event('resize')); }
-applyWords();
+// On-screen words are switched off for now: say() only logs, so nothing appears on screen.
+function say(text,small){ if(text) console.log('[Cassie]',text); }
 // while Cassie talks, gently scroll long captions so the current bit is visible
 let capScroll=null;
-function scrollCaption(seconds){ clearInterval(capScroll); caption.scrollTop=0; const max=caption.scrollHeight-caption.clientHeight; if(max<=4) return; const t0=performance.now(); capScroll=setInterval(()=>{ const p=Math.min(1,(performance.now()-t0)/(seconds*1000)); caption.scrollTop=max*Math.max(0,(p-.25)/.75); if(p>=1) clearInterval(capScroll); },100); }
+function scrollCaption(){}
 
 // ---------- server calls ----------
 async function api(path,opts={}){
@@ -478,7 +476,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 function setToggle(el,on){ el.setAttribute('aria-checked',on?'true':'false'); }
 function chips(el,items,cls){ el.innerHTML=''; if(!items.length){ el.innerHTML='<span class="empty">Nothing yet</span>'; return; } items.forEach(t=>{ const s=document.createElement('span'); s.className='chip'+(cls?' '+cls:''); s.textContent=t; el.appendChild(s); }); }
 async function openParent(){
-  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('showWords'),S.showWords); setToggle($('liveEars'),S.liveEars); setToggle($('bargeIn'),S.bargeIn); renderVoices();
+  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('liveEars'),S.liveEars); setToggle($('bargeIn'),S.bargeIn); renderVoices();
   const u=usage(); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min';
   $('parent').hidden=false; $('resetConfirm').hidden=true;
   $('keyStatus').textContent='Checking Cassie’s connection…';
@@ -496,7 +494,6 @@ async function openParent(){
 $('limitIn').addEventListener('change',()=>{ const v=Math.max(5,Math.min(120,parseInt($('limitIn').value,10)||20)); S.limit=v; store.set('limit',v); $('limitIn').value=v; if(state==='sleeping'&&minutesLeft()>0) setState('idle'); });
 $('plus10').addEventListener('click',()=>{ const u=usage(); u.bonus+=10; saveUsage(u); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min'; if(state==='sleeping') { setState('idle'); say('',true); } });
 $('handsFree').addEventListener('click',()=>{ S.handsFree=!S.handsFree; store.set('handsFree',S.handsFree); setToggle($('handsFree'),S.handsFree); });
-$('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); applyWords(); });
 $('liveEars').addEventListener('click',()=>{ S.liveEars=!S.liveEars; store.set('liveEars',S.liveEars); setToggle($('liveEars'),S.liveEars); if(S.liveEars){ Ears.fails=0; Ears.timeouts=0; } else Ears.close(); });
 $('bargeIn').addEventListener('click',()=>{ S.bargeIn=!S.bargeIn; store.set('bargeIn',S.bargeIn); setToggle($('bargeIn'),S.bargeIn); });
 const VOICES=[
