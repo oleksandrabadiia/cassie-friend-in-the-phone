@@ -14,6 +14,9 @@ const S={
   handsFree:store.get('handsFree',true),
   showWords:store.get('showWords',true),
   voice:store.get('voice','marin'),
+  liveEars:store.get('liveEars',true),
+  bargeIn:store.get('bargeIn',true),
+  pause:store.get('pause',500),
 };
 const today=()=>new Date().toLocaleDateString('en-CA');
 function usage(){ const u=store.get('usage',{}); return u.date===today()?u:{date:today(),seconds:0,bonus:0}; }
@@ -61,7 +64,7 @@ function friendlyError(e){
 }
 
 // ---------- audio: one AudioContext, unlocked by the first tap ----------
-let ac=null, micStream=null;
+let ac=null, micStream=null, micAn=null, pcmNode=null;
 function audioCtx(){ if(!ac){ const C=window.AudioContext||window.webkitAudioContext; ac=new C(); } if(ac.state==='suspended') ac.resume(); return ac; }
 
 // ---------- active-time tracking for the daily limit ----------
@@ -73,6 +76,94 @@ function markActive(on){
 }
 setInterval(()=>{ if(activeSince!=null){ const u=usage(); u.seconds+=(Date.now()-activeSince)/1000; activeSince=Date.now(); saveUsage(u); } },5000);
 
+// ---------- microphone: one stream, one level meter, one live-hearing feed ----------
+async function getMic(){
+  if(micStream&&micStream.getTracks().some(t=>t.readyState==='live')) return micStream;
+  micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  micAn=null; pcmNode=null;
+  return micStream;
+}
+async function micGraph(){
+  const stream=await getMic(), ctx=audioCtx();
+  if(!micAn){ const src=ctx.createMediaStreamSource(stream); micAn=ctx.createAnalyser(); micAn.fftSize=1024; src.connect(micAn);
+    try{ await ctx.audioWorklet.addModule('/pcm-worklet.js?v=1'); pcmNode=new AudioWorkletNode(ctx,'pcm-sender'); src.connect(pcmNode); pcmNode.port.onmessage=e=>Ears.feed(e.data); pcmNode.port.postMessage(true); }catch(e){ console.warn('no worklet',e); pcmNode=null; }
+  }
+  return micAn;
+}
+const micBuf=new Float32Array(1024);
+function micLevel(){ if(!micAn) return 0; micAn.getFloatTimeDomainData(micBuf); let s=0; for(let i=0;i<micBuf.length;i++) s+=micBuf[i]*micBuf[i]; return Math.sqrt(s/micBuf.length); }
+
+// ---------- live ears: William's voice streams to OpenAI while he talks, so the words are ready the moment he stops ----------
+const Ears={
+  ws:null, connecting:false, fails:0, timeouts:0, open:false, sending:false, queue:[], preroll:[], text:'', waiters:[], item:null, expires:0,
+  enabled(){ return S.liveEars&&this.fails<2; },
+  async connect(){
+    if(!this.enabled()||!pcmNode) return false;
+    if(this.ws&&this.ws.readyState<=1&&Date.now()<this.expires-20000) return true;
+    if(this.connecting) return false;
+    this.close(); this.connecting=true;
+    try{
+      const d=await (await api('/api/ears',{method:'POST'})).json();
+      if(!d.token) throw new Error('no token');
+      this.expires=d.expires?d.expires*1000:Date.now()+540000;
+      // try the current way first, then the older way, with the same key
+      const tries=d.api==='beta'
+        ?[['wss://api.openai.com/v1/realtime?intent=transcription',['realtime','openai-insecure-api-key.'+d.token,'openai-beta.realtime-v1']]]
+        :[['wss://api.openai.com/v1/realtime',['realtime','openai-insecure-api-key.'+d.token]],['wss://api.openai.com/v1/realtime?intent=transcription',['realtime','openai-insecure-api-key.'+d.token,'openai-beta.realtime-v1']]];
+      let ws=null, lastErr=null;
+      for(const [url,protos] of tries){
+        try{
+          const w=new WebSocket(url,protos); this.ws=w; this.open=false;
+          await new Promise((res,rej)=>{ const t=setTimeout(()=>rej(new Error('timeout')),4000); w.onopen=()=>{ clearTimeout(t); res(); }; w.onerror=e=>{ clearTimeout(t); rej(e); }; w.onclose=()=>{ clearTimeout(t); rej(new Error('closed')); }; });
+          ws=w; break;
+        }catch(e){ lastErr=e; try{ this.ws&&this.ws.close(); }catch(_){} this.ws=null; }
+      }
+      if(!ws) throw lastErr||new Error('no socket');
+      this.open=true; this.fails=0;
+      if(d.api==='beta') ws.send(JSON.stringify({type:'transcription_session.update',session:{input_audio_format:'pcm16',input_audio_transcription:{model:d.model,language:'en'},turn_detection:null}}));
+      ws.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(_){ return; } this.onEvent(m); };
+      ws.onclose=()=>{ if(this.ws===ws){ this.ws=null; this.open=false; this.resolve(null); } };
+      ws.onerror=()=>{};
+      for(const q of this.queue) ws.send(q); this.queue=[];
+      this.connecting=false; return true;
+    }catch(e){ console.warn('live ears off',e); this.fails++; this.ws=null; this.open=false; this.queue=[]; this.connecting=false; return false; }
+  },
+  close(){ if(this.ws){ try{ this.ws.close(); }catch(e){} } this.ws=null; this.open=false; this.queue=[]; },
+  onEvent(m){
+    if(m.type==='conversation.item.input_audio_transcription.delta'){ if(this.item&&m.item_id&&m.item_id!==this.item) return; this.item=m.item_id||this.item; this.text+=m.delta||''; }
+    else if(m.type==='conversation.item.input_audio_transcription.completed'){ this.resolve((m.transcript||'').trim()); }
+    else if(m.type==='error'){ console.warn('ears error',m.error); if(m.error&&/session|unauthor|token|expired/i.test(m.error.message||'')) this.close(); }
+  },
+  // audio from the worklet: keep a little of the past (so an interruption doesn't lose his first word), send while listening
+  feed(buf){
+    this.preroll.push(buf); if(this.preroll.length>6) this.preroll.shift();
+    if(!this.sending) return;
+    this.send(buf);
+  },
+  send(buf){
+    let bin=''; const bytes=new Uint8Array(buf); for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
+    const msg=JSON.stringify({type:'input_audio_buffer.append',audio:btoa(bin)});
+    if(this.ws&&this.open) this.ws.send(msg); else if(this.connecting&&this.queue.length<300) this.queue.push(msg);
+  },
+  start(withPreroll){
+    this.text=''; this.item=null; this.resolve(null); this.waiters=[];
+    if(!this.enabled()||!pcmNode) return false;
+    this.connect();
+    if(this.ws&&this.open) try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.clear'})); }catch(e){}
+    if(withPreroll) for(const b of this.preroll) this.send(b);
+    this.preroll=[]; this.sending=true; return true;
+  },
+  // he stopped talking: ask for the words, wait briefly, give up and fall back if they don't come
+  finish(ms){
+    this.sending=false;
+    if(!this.ws||!this.open) return Promise.resolve(null);
+    try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.commit'})); }catch(e){ return Promise.resolve(null); }
+    return new Promise(res=>{ this.waiters.push(v=>{ this.timeouts=0; res(v); }); setTimeout(()=>{ if(this.waiters.length){ this.waiters=[]; if(++this.timeouts>=2){ this.fails=9; this.close(); } res(null); } },ms); });
+  },
+  cancel(){ this.sending=false; this.resolve(null); if(this.ws&&this.open) try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.clear'})); }catch(e){} },
+  resolve(v){ const w=this.waiters; this.waiters=[]; for(const r of w) r(v); },
+};
+
 // ---------- listening ----------
 let rec=null, recChunks=[], recInfo=null;
 function pickMime(){
@@ -80,39 +171,31 @@ function pickMime(){
   for(const m of opts){ try{ if(window.MediaRecorder&&MediaRecorder.isTypeSupported(m)) return m; }catch(e){} }
   return '';
 }
-async function getMic(){
-  if(micStream&&micStream.getTracks().some(t=>t.readyState==='live')) return micStream;
-  micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
-  return micStream;
-}
-async function startListening(auto){
+async function startListening(auto,opts={}){
   if(minutesLeft()<=0){ return goToSleep(); }
-  let stream;
-  try{ stream=await getMic(); }
+  let an;
+  try{ an=await micGraph(); }
   catch(e){ setState('idle'); say('Cassie needs the microphone. A grown-up can allow it in Settings.',true); return; }
-  const ctx=audioCtx();
-  const src=ctx.createMediaStreamSource(stream), an=ctx.createAnalyser(); an.fftSize=1024; src.connect(an);
-  const buf=new Float32Array(an.fftSize);
-  const mime=pickMime();
+  const stream=micStream, mime=pickMime();
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
-  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:false,started,cancelled:false};
+  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false};
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
-  rec.onstop=()=>{ try{ src.disconnect(); }catch(e){} onRecorded(); };
+  rec.onstop=()=>onRecorded();
   rec.start(250);
+  recInfo.live=Ears.start(!!opts.interrupted);
   setState('listening'); markActive(true);
   if(!auto) say('',true);
-  // voice detection: stop after a pause, or give up if he says nothing
-  let noise=0.01, n=0, lastLoud=0;
+  // voice detection: stop after a short pause, or give up if he says nothing
+  let noise=0.01, n=0, lastLoud=opts.interrupted?0:-1;
   const tick=()=>{
     if(!rec||rec.state!=='recording') return;
-    an.getFloatTimeDomainData(buf); let s=0; for(let i=0;i<buf.length;i++) s+=buf[i]*buf[i];
-    const rms=Math.sqrt(s/buf.length), t=performance.now()-started;
-    if(t<350){ noise=(noise*n+rms)/(++n); }
+    const rms=micLevel(), t=performance.now()-started;
+    if(t<300&&!opts.interrupted){ noise=(noise*n+rms)/(++n); }
     else{
       const thr=Math.max(0.018,noise*3);
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
-      if(recInfo.heard&&t-lastLoud>650) return stopListening();
+      if(recInfo.heard&&t-lastLoud>S.pause) return stopListening();
       if(!recInfo.heard&&t>(auto?7000:9000)){ recInfo.cancelled=true; return stopListening(); }
       if(t>20000) return stopListening();
     }
@@ -145,57 +228,111 @@ function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return n
 
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
-  if(info.cancelled||!info.heard){ markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
+  if(info.cancelled||!info.heard){ Ears.cancel(); markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
   setState('thinking');
-  const blob=new Blob(chunks,{type:info.mime});
-  const ext=info.mime.includes('webm')?'webm':info.mime.includes('ogg')?'ogg':'m4a';
   const seconds=(performance.now()-info.started)/1000;
-  // start hearing+thinking straight away, and say a quick "Hmm…" while we wait
-  const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
-  fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft()}));
-  const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
-  const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
+  const token=++playToken;
   try{
-    const {heard,say:text,mood}=await turnP;
-    history.push({role:'user',content:heard||'(William said something but it was too quiet or unclear to hear.)'});
-    history.push({role:'assistant',content:text});
-    await fillerDone;
-    await speakReply(text,mood);
-  }catch(e){ console.error(e); markActive(false); setState('idle'); say(friendlyError(e),true); }
+    // 1) the words, hopefully already waiting from live hearing
+    let heard=info.live?await Ears.finish(2500):null;
+    if(token!==playToken) return;
+    if(heard!==null){
+      history.push({role:'user',content:heard||'(William said something but it was too quiet or unclear to hear.)'});
+      await talkStream({text:heard,heardSeconds:seconds},token);
+    }else{
+      // 2) the slower way: send the recording up and wait for the whole answer
+      const blob=new Blob(chunks,{type:info.mime});
+      const ext=info.mime.includes('webm')?'webm':info.mime.includes('ogg')?'ogg':'m4a';
+      const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
+      fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft()}));
+      const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
+      const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
+      const {heard:h,say:text,mood}=await turnP;
+      if(token!==playToken) return;
+      history.push({role:'user',content:h||'(William said something but it was too quiet or unclear to hear.)'});
+      history.push({role:'assistant',content:text});
+      await fillerDone;
+      await speakReply(text,mood,token);
+    }
+  }catch(e){ console.error(e); if(token!==playToken) return; markActive(false); setState('idle'); say(friendlyError(e),true); }
 }
 
 // ---------- Cassie replies ----------
 let currentSource=null, playToken=0;
 async function cassieReplies(isStart,topic){
   setState('thinking');
-  const filler=(!isStart&&randomFiller()); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
-  const r=await api('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:history.slice(-16),minutesLeft:minutesLeft(),start:isStart,topic})});
-  const {say:text,mood}=await r.json();
-  if(topic) history.push({role:'user',content:'(William tapped the '+topic+' button.)'});
-  history.push({role:'assistant',content:text});
-  await fillerDone;
-  loadFillers().then(loadCallouts);
-  await speakReply(text,mood);
-}
-// split into a short first part (so she can start talking sooner) and the rest
-function splitFirst(text){
-  const m=text.match(/^(.{6,140}?[.!?…])(\s+)([\s\S]+)$/);
-  return m?[m[1],m[3]]:[text];
-}
-async function speakReply(text,mood){
-  const parts=splitFirst(text);
-  const bufsP=parts.map(p=>fetchAudio(p,mood));   // make all parts at the same time
-  say(text); scrollCaption(Math.max(3,text.length/14));
   const token=++playToken;
-  for(let i=0;i<parts.length;i++){
-    const b=await bufsP[i];
-    if(token!==playToken) return;
-    await playBuffer(b,i===0?mood:null);
-    if(token!==playToken||state!=='speaking') return;   // interrupted
+  if(topic) history.push({role:'user',content:'(William tapped the '+topic+' button.)'});
+  await talkStream({start:isStart,topic},token);
+  loadFillers().then(loadCallouts);
+}
+// Cassie's words arrive bit by bit; each finished sentence is voiced and played while the next is still being written
+async function talkStream(req,token){
+  const body=Object.assign({messages:history.slice(-16),minutesLeft:minutesLeft()},req);
+  const r=await api('/api/talk',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const reader=r.body.getReader(), dec=new TextDecoder();
+  const sp=new Speaker(token); let pending='', text='', spoken=0, final=null;
+  // a quick "Hmm…" if her first words take a moment
+  let fillerTimer=setTimeout(()=>{ if(!sp.started&&token===playToken){ const f=randomFiller(); if(f) sp.filler(f); } },350);
+  const cut=()=>{ // hand over every complete sentence
+    const m=text.slice(spoken).match(/^([\s\S]{6,}?[.!?…]+["”’)]?)(\s+)(?=\S)/);
+    if(m){ spoken+=m[1].length+m[2].length; sp.push(m[1]); say(text); cut(); }
+  };
+  while(true){
+    const {value,done}=await reader.read(); if(done) break;
+    if(token!==playToken){ reader.cancel(); sp.stop(); return; }
+    pending+=dec.decode(value,{stream:true});
+    const lines=pending.split('\n'); pending=lines.pop()||'';
+    for(const l of lines){ if(!l.trim()) continue; let j; try{ j=JSON.parse(l); }catch(e){ continue; }
+      if(j.mood){ sp.mood=j.mood; if(j.mood!=='front') face().mood(j.mood); }
+      if(j.t){ text+=j.t; cut(); }
+      if(j.error){ const err=new Error(j.error); err.code=j.error; clearTimeout(fillerTimer); sp.stop(); throw err; }
+      if(j.done) final=j; }
   }
+  clearTimeout(fillerTimer);
+  const full=(final&&final.say)||text;
+  if(full.slice(spoken).trim()) sp.push(full.slice(spoken).trim());
+  say(full); scrollCaption(Math.max(3,(full.length-spoken)/14)); history.push({role:'assistant',content:full});
+  await sp.end();
+  if(token!==playToken||state!=='speaking') return;
   face().speaking(false);
+  afterReply();
+}
+function afterReply(){
   if(minutesLeft()<=0) return goToSleep();
   if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
+}
+// plays sentences in order, fetching the voice for the next one while the current one plays
+class Speaker{
+  constructor(token){ this.token=token; this.q=[]; this.playing=null; this.started=false; this.mood='front'; this.ended=false; this.first=true; this.fillerP=null; }
+  filler(buf){ if(this.started) return; this.fillerP=playBuffer(buf,null,{keepThinking:true}); }
+  push(text){ const item={text,audio:fetchAudio(text,this.mood)}; this.q.push(item); this.pump(); }
+  async pump(){
+    if(this.playing||!this.q.length) return;
+    const item=this.q[0]; this.playing=item;
+    try{
+      const buf=await item.audio;
+      if(this.fillerP){ await this.fillerP; this.fillerP=null; }
+      if(this.token!==playToken) return;
+      this.started=true;
+      await playBuffer(buf,this.first?this.mood:null); this.first=false;
+    }catch(e){ console.warn('voice failed',e); }
+    this.q.shift(); this.playing=null;
+    if(this.q.length) this.pump(); else if(this.ended&&this.done) this.done();
+  }
+  end(){ this.ended=true; if(!this.playing&&!this.q.length) return Promise.resolve(); return new Promise(res=>{ this.done=res; if(!this.playing) this.pump(); }); }
+  stop(){ this.q=[]; this.ended=true; }
+}
+async function speakReply(text,mood,token){
+  const sp=new Speaker(token); sp.mood=mood;
+  say(text); scrollCaption(Math.max(3,text.length/14));
+  let rest=text; const parts=[];
+  while(rest){ const m=rest.match(/^([\s\S]{6,}?[.!?…]+["”’)]?)(\s+)(?=\S)/); if(!m){ parts.push(rest); break; } parts.push(m[1]); rest=rest.slice(m[0].length); }
+  parts.forEach(p=>sp.push(p));
+  await sp.end();
+  if(token!==playToken||state!=='speaking') return;
+  face().speaking(false);
+  afterReply();
 }
 function playBuffer(audio,mood,opts={}){
   const ctx=audioCtx();
@@ -211,6 +348,18 @@ function playBuffer(audio,mood,opts={}){
   return new Promise(res=>{ src.onended=()=>{ running=false; if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src) currentSource=null; res(); }; src.start(); loop(); });
 }
 function interrupt(){ playToken++; if(currentSource){ try{ currentSource.onended=null; currentSource.stop(); }catch(e){} currentSource=null; face().speaking(false); } }
+
+// ---------- William talks over her: if he speaks up while she's talking, she stops and listens ----------
+let bargeFloor=0, bargeSince=0, bargeCal=0;
+setInterval(()=>{
+  if(!S.bargeIn||state!=='speaking'||!micAn||!currentSource){ bargeFloor=0; bargeCal=0; bargeSince=0; return; }
+  const rms=micLevel(); bargeCal++;
+  if(bargeCal<12){ bargeFloor=Math.max(bargeFloor,rms); return; }           // first ~0.5 s: learn how loud her own voice sounds in the mic
+  const loud=rms>Math.max(0.045,bargeFloor*2.4);
+  if(!loud){ bargeFloor=Math.max(bargeFloor*0.995,rms); bargeSince=0; return; }
+  if(!bargeSince) bargeSince=Date.now();
+  else if(Date.now()-bargeSince>380){ bargeSince=0; interrupt(); startListening(false,{interrupted:true}); }
+},40);
 
 function goToSleep(){ markActive(false); setState('sleeping'); say('That’s all our Cassie time for today. Let’s play again tomorrow!'); }
 
@@ -250,6 +399,7 @@ talkBtn.addEventListener('click',async ()=>{
   if(!started){
     started=true;
     try{ await getMic(); }catch(e){ say('Cassie needs the microphone. A grown-up can allow it in Settings.',true); started=false; return; }
+    micGraph().then(()=>Ears.connect()).catch(()=>{});
     try{ await cassieReplies(true); }catch(e){ console.error(e); started=false; markActive(false); setState('idle'); say(friendlyError(e),true); }
     return;
   }
@@ -261,8 +411,8 @@ document.querySelectorAll('.topic').forEach(b=>b.addEventListener('click',async 
   if(state==='sleeping'||minutesLeft()<=0) return goToSleep();
   if(state==='thinking') return;
   if(state==='listening'){ recInfo&&(recInfo.cancelled=true); stopListening(); }
-  interrupt(); playToken++;
-  try{ if(!started){ started=true; try{ await getMic(); }catch(e){} loadFillers().then(loadCallouts); }
+  interrupt();
+  try{ if(!started){ started=true; try{ await getMic(); micGraph().then(()=>Ears.connect()); }catch(e){} }
     await cassieReplies(false,b.dataset.topic); }
   catch(e){ console.error(e); markActive(false); setState('idle'); say(friendlyError(e),true); }
 }));
@@ -305,7 +455,7 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 function setToggle(el,on){ el.setAttribute('aria-checked',on?'true':'false'); }
 function chips(el,items,cls){ el.innerHTML=''; if(!items.length){ el.innerHTML='<span class="empty">Nothing yet</span>'; return; } items.forEach(t=>{ const s=document.createElement('span'); s.className='chip'+(cls?' '+cls:''); s.textContent=t; el.appendChild(s); }); }
 async function openParent(){
-  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('showWords'),S.showWords); renderVoices();
+  $('limitIn').value=S.limit; setToggle($('handsFree'),S.handsFree); setToggle($('showWords'),S.showWords); setToggle($('liveEars'),S.liveEars); setToggle($('bargeIn'),S.bargeIn); renderVoices();
   const u=usage(); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min';
   $('parent').hidden=false; $('resetConfirm').hidden=true;
   $('keyStatus').textContent='Checking Cassie’s connection…';
@@ -324,6 +474,8 @@ $('limitIn').addEventListener('change',()=>{ const v=Math.max(5,Math.min(120,par
 $('plus10').addEventListener('click',()=>{ const u=usage(); u.bonus+=10; saveUsage(u); $('usedToday').textContent=Math.round(u.seconds/60)+' of '+(S.limit+u.bonus)+' min'; if(state==='sleeping') { setState('idle'); say('',true); } });
 $('handsFree').addEventListener('click',()=>{ S.handsFree=!S.handsFree; store.set('handsFree',S.handsFree); setToggle($('handsFree'),S.handsFree); });
 $('showWords').addEventListener('click',()=>{ S.showWords=!S.showWords; store.set('showWords',S.showWords); setToggle($('showWords'),S.showWords); applyWords(); });
+$('liveEars').addEventListener('click',()=>{ S.liveEars=!S.liveEars; store.set('liveEars',S.liveEars); setToggle($('liveEars'),S.liveEars); if(S.liveEars){ Ears.fails=0; Ears.timeouts=0; } else Ears.close(); });
+$('bargeIn').addEventListener('click',()=>{ S.bargeIn=!S.bargeIn; store.set('bargeIn',S.bargeIn); setToggle($('bargeIn'),S.bargeIn); });
 const VOICES=[
   ['marin','Marin','OpenAI · soft and natural'],['shimmer','Shimmer','OpenAI · light and bright'],['sage','Sage','OpenAI · calm and kind'],['coral','Coral','OpenAI · warm and friendly'],
   ['nova','Nova','OpenAI · cheerful'],['fable','Fable','OpenAI · storyteller'],['alloy','Alloy','OpenAI · clear'],['ballad','Ballad','OpenAI · soft and dreamy'],
@@ -360,7 +512,7 @@ $('changeCode').addEventListener('click',()=>{ $('parent').hidden=true; openSetu
 // keep the screen awake while she's chatting
 let wake=null; async function keepAwake(){ try{ if('wakeLock' in navigator&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>wake=null); } }catch(e){} }
 talkBtn.addEventListener('click',keepAwake);
-document.addEventListener('visibilitychange',()=>{ if(document.hidden){ stopListening(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden){ stopListening(); Ears.cancel(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
 
 // no pinch or double-tap zoom in Safari
 document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});

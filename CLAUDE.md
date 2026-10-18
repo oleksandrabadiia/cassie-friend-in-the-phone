@@ -15,13 +15,23 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
   - `engine.js` — Cassie's face: canvas animation from cut-out layers in `img/` (face, hair strands,
     googly pupils, mouth shapes, 3/4 turn frames, shadow). Exposes `window.CassieFace`
     (`mode`, `mood`, `speaking`, `level`, `giggle`, `jump`, `rollEyes`). No eyelids/blinking (Ara removed them).
-  - `app.js` — conversation loop, daily time limit, parent settings, voice list, idle behaviour.
+  - `app.js` — conversation loop, daily time limit, parent settings, voice list, idle behaviour. Key parts: `Ears`
+    (live hearing WebSocket, with preroll buffer and automatic fallback after 2 failures), `startListening` (MediaRecorder
+    as backup + VAD, pause `S.pause` = 0.5 s), `talkStream` + `Speaker` (sentence-by-sentence voicing of the streamed
+    reply, "Hmm…" filler only if the first sentence takes >350 ms), barge-in interval (William talking over Cassie
+    interrupts her; adaptive threshold so her own voice in the mic doesn't trigger it).
+  - `pcm-worklet.js` — AudioWorklet that turns the mic into 24 kHz 16-bit 100 ms chunks for live hearing.
   - `img/btn/*.webp` — clay buttons cut from Ara's design sheets. `talk-blank.webp` is the disc without
     the mic, used behind the listening/thinking/speaking icons.
 - **Server** (`netlify/functions/`, TypeScript `.mts`): keeps the API keys hidden and enforces limits.
-  - `turn.mts` `/api/turn` — one round trip: transcribe William's audio, then think. Used for every reply.
-  - `chat.mts` `/api/chat` — think only (first greeting, topic buttons).
-  - `hear.mts` `/api/hear` — transcribe only (legacy).
+  - `talk.mts` `/api/talk` — **the main one**: streams Cassie's reply as newline JSON (`{mood}`, `{t:"words"}`…, `{done,say,mood}`)
+    so the phone can voice the first sentence while the rest is still being written. Body: `{text|start|topic, messages, minutesLeft, heardSeconds}`.
+  - `ears.mts` `/api/ears` — mints a 10-minute OpenAI client secret for **live hearing** (the phone streams William's
+    voice over a WebSocket to OpenAI's realtime transcription while he talks, so the words are ready when he stops).
+    Tries the current `client_secrets` API, then the older `transcription_sessions` one. Model via `CASSIE_LIVE_MODEL`
+    (default `gpt-4o-mini-transcribe`, ~$0.003/min of audio).
+  - `turn.mts` `/api/turn` — fallback round trip: upload the recording, transcribe, think (used when live hearing is off/fails).
+  - `chat.mts` `/api/chat` — think only, non-streaming (legacy). `hear.mts` `/api/hear` — transcribe only (legacy).
   - `speak.mts` `/api/speak` — text to speech (OpenAI `gpt-4o-mini-tts` voices, or Google Chirp 3 HD
     voices when `GOOGLE_TTS_KEY` is set; voice ids starting `g:` are Google).
   - `status.mts` `/api/status` — parent screen data; `POST {action:"reset-profile"}` clears memory.
@@ -29,8 +39,10 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
   - `lib/brain.mts` — transcribe + think, topic-button prompts (`TOPICS`), learning-profile updates.
   - `lib/common.mts` — family-code check, spend tracking (Netlify Blobs store `cassie`), William's profile
     (`practised`, `tricky`, `likes`, `memories`).
-- **Models**: hearing `gpt-4o-mini-transcribe` → `whisper-1`; brain `gpt-4o-mini` → `gpt-4.1-mini` →
-  `gpt-5-mini` (override with env `CASSIE_MODEL`); voice `gpt-4o-mini-tts` → `tts-1`.
+- **Models**: hearing `gpt-4o-mini-transcribe` (live over realtime, or file upload) → `whisper-1`; brain `gpt-4o-mini` →
+  `gpt-4.1-mini` → `gpt-5-mini` (override with env `CASSIE_MODEL`), streamed; voice `gpt-4o-mini-tts` → `tts-1`.
+- **Reply format** (`lib/prompt.mts` `FORMAT_RULES`): line 1 `@mood`, then the spoken words, then `###{json bookkeeping}`.
+  `thinkStream` in `brain.mts` parses it as it streams (also tolerates the old all-JSON style).
 
 ## Conversation flow (what Ara wants)
 
@@ -39,9 +51,9 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
 3. Fun/superheroes last, as a treat — superheroes are deliberately de-emphasised.
 4. Follow his lead; listen more than talk; short replies; one question at a time.
 
-Speed matters to William: the app plays an instant "Hmm…"/"Ooh!" clip (pre-made in her voice) the moment
-he stops talking, splits her reply so the first sentence plays while the rest renders, and uses a 0.8 s
-end-of-speech pause. Idle: silly jump/eye-roll at 25 s, a spoken call-out at 50 s (max twice/session),
+Speed matters to William: live hearing while he talks, 0.5 s end-of-speech pause, streamed reply voiced sentence by
+sentence, a pre-made "Hmm…"/"Ooh!" clip only if the first sentence is slow, and he can talk over her to interrupt.
+Parent toggles: "Live hearing" and "William can talk over Cassie" (both on by default). Idle: silly jump/eye-roll at 25 s, a spoken call-out at 50 s (max twice/session),
 sleepy at 90 s.
 
 ## Secrets & settings (Netlify env vars, Production context)
