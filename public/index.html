@@ -65,9 +65,10 @@ body.nowords .caption{display:none}
 .topic:active img,.topic.pressed img{filter:drop-shadow(0 0 0 #8e4fd6) drop-shadow(0 0 1.5px #8e4fd6) drop-shadow(0 0 1.5px #8e4fd6) drop-shadow(0 0 4px rgba(142,79,214,.6))}
 .talk:active,.talk.pressed{filter:drop-shadow(0 0 0 #8e4fd6) drop-shadow(0 0 2px #8e4fd6) drop-shadow(0 0 2px #8e4fd6) drop-shadow(0 0 6px rgba(142,79,214,.6))}
 .topic[disabled]{opacity:.45}
+.logo{position:fixed;top:max(12px,env(safe-area-inset-top));left:max(14px,env(safe-area-inset-left));width:92px;height:auto;z-index:9;pointer-events:none}
 .parentbtn{z-index:10;touch-action:manipulation;-webkit-touch-callout:none;position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
-.parentbtn svg{width:22px;height:22px}
-.parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);opacity:0}
+.parentbtn img{width:30px;height:30px;display:block;margin:auto;pointer-events:none;opacity:.9}
+.parentbtn .prog{position:absolute;inset:-2px;border-radius:50%;border:3px solid var(--clay);opacity:0}
 .parentbtn.tap1 .prog{opacity:.35}.parentbtn.tap2 .prog{opacity:.75}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--clay-deep);outline-offset:3px}
 /* overlays */
@@ -143,10 +144,8 @@ input[type=number]{width:90px}
 </div>
 </div>
 
-<button class="parentbtn" id="parentBtn" type="button" aria-label="Grown-ups: tap three times">
-  <span class="prog"></span>
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-</button>
+<img class="logo" src="/img/logo.webp" alt="Cassie">
+<button class="parentbtn" id="parentBtn" type="button" aria-label="Grown-ups: tap three times"><span class="prog"></span><img src="/img/cog.webp" alt=""></button>
 
 <!-- first-time setup: family code -->
 <div class="sheet" id="setup" hidden>
@@ -206,6 +205,6 @@ input[type=number]{width:90px}
 </div>
 
 <script src="/engine.js?v=8"></script>
-<script src="/app.js?v=20"></script>
+<script src="/app.js?v=21"></script>
 </body>
 </html>
