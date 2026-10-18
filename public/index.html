@@ -45,39 +45,24 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:h
 body.nowords .caption{display:none}
 .caption.small{font-size:.88rem;color:var(--ink-soft)}
 .talkwrap{display:flex;flex-direction:column;align-items:center;gap:0;padding-top:0;margin-top:-14px}
-.talk{position:relative;width:96px;height:96px;border-radius:50%;border:0;background:var(--clay);color:#fff;cursor:pointer;
-  box-shadow:inset 0 -9px 0 var(--clay-deep),inset 0 6px 10px rgba(255,255,255,.18),0 10px 22px rgba(76,29,122,.28);transition:transform .12s}
-.talk:active{transform:translateY(4px) scale(.98);box-shadow:inset 0 -4px 0 var(--clay-deep),0 5px 12px rgba(76,29,122,.25)}
-.talk svg{width:42px;height:42px;display:block;margin:auto}
-.talk .ring{position:absolute;inset:-10px;border-radius:50%;border:6px solid var(--clay);opacity:0;pointer-events:none}
+.talk{position:relative;width:118px;height:114px;border:0;background:url('/img/btn/talk.webp') center/contain no-repeat;cursor:pointer;transition:transform .12s;filter:drop-shadow(0 6px 10px rgba(76,29,122,.18))}
+.talk:active{transform:translateY(3px) scale(.97)}
+.talk .ring{position:absolute;inset:6px 10px 14px 10px;border-radius:50%;border:6px solid var(--clay);opacity:0;pointer-events:none}
 .talk[data-state="listening"] .ring{animation:ring 1.2s ease-out infinite}
 @keyframes ring{0%{transform:scale(.9);opacity:.55}100%{transform:scale(1.25);opacity:0}}
-.talk[data-state="thinking"]{background:#9a6ccc}
-.talk[data-state="sleeping"]{background:#cbb8de;box-shadow:inset 0 -9px 0 #a58fc0}
-.talk .ic{display:none}
-.talk[data-state="idle"] .ic-mic,.talk[data-state="listening"] .ic-stop,.talk[data-state="thinking"] .ic-dots,.talk[data-state="speaking"] .ic-wave,.talk[data-state="sleeping"] .ic-moon{display:block}
+.talk[data-state="sleeping"]{filter:grayscale(.6) opacity(.75) drop-shadow(0 6px 10px rgba(76,29,122,.1))}
+.talk .ic{display:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:48px;height:48px;color:#f5e9d8;filter:drop-shadow(0 2px 1px rgba(60,20,90,.35))}
+.talk[data-state="listening"] .ic-stop,.talk[data-state="thinking"] .ic-dots,.talk[data-state="speaking"] .ic-wave,.talk[data-state="sleeping"] .ic-moon{display:block}
+.talk:not([data-state="idle"]){background-image:url('/img/btn/talk-blank.webp')}
 .ic-dots circle{animation:bob 1s ease-in-out infinite}
 .ic-dots circle:nth-child(2){animation-delay:.15s}.ic-dots circle:nth-child(3){animation-delay:.3s}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .talklabel{display:none}
-.topics{width:100%;max-width:340px;display:grid;grid-template-columns:repeat(4,1fr);gap:7px;padding:0;margin-top:16px}
-.topic{--c:#7b3fb3;--d:#4c1d7a;display:flex;flex-direction:column;align-items:center;gap:1px;border:0;border-radius:15px;background:var(--c);color:#fff;padding:6px 3px 5px;cursor:pointer;box-shadow:inset 0 -4px 0 var(--d),0 3px 8px rgba(58,42,74,.14);font-family:var(--display);font-weight:700;font-size:.72rem;letter-spacing:.01em;transition:transform .1s}
-.topic:active{transform:translateY(3px);box-shadow:inset 0 -1px 0 var(--d)}
-.topic svg{width:25px;height:25px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-.topic svg .f{fill:#fff;stroke:none}
+.topics{width:100%;max-width:400px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px 6px;padding:0;margin-top:6px}
+.topic{display:block;border:0;background:transparent;padding:0;cursor:pointer;aspect-ratio:120/100;transition:transform .1s}
+.topic img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
+.topic:active{transform:translateY(3px) scale(.96)}
 .topic[disabled]{opacity:.45}
-.t-maths{--c:#3f7ee8;--d:#2a56a8}
-.t-phonics{--c:#e8663f;--d:#a8402a}
-.t-world{--c:#2fa883;--d:#1d6e56}
-.t-animals{--c:#e0a52a;--d:#9c701b}
-.t-quiz{--c:#8e4fd6;--d:#5d2f94}
-.t-draw{--c:#ea4f8c;--d:#a8305f}
-.t-space{--c:#3b4f9f;--d:#26336b}
-.t-dinos{--c:#5aa83a;--d:#3a6f25}
-.t-cars{--c:#e8453f;--d:#a82c28}
-.t-story{--c:#2fa0c8;--d:#1e6a86}
-.t-heroes{--c:#f0a21f;--d:#a86f10}
-.t-surprise{--c:#b24fd6;--d:#772f94}
 .parentbtn{z-index:10;touch-action:manipulation;-webkit-touch-callout:none;position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
 .parentbtn svg{width:22px;height:22px}
 .parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);opacity:0}
@@ -132,27 +117,26 @@ input[type=number]{width:90px}
   <div class="talkwrap">
     <button class="talk" id="talk" type="button" data-state="idle" aria-label="Talk to Cassie">
       <span class="ring"></span>
-      <svg class="ic ic-mic" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><rect x="17" y="6" width="14" height="24" rx="7" fill="currentColor" stroke="none"/><path d="M10 23a14 14 0 0 0 28 0M24 37v6"/></svg>
       <svg class="ic ic-stop" viewBox="0 0 48 48"><rect x="14" y="14" width="20" height="20" rx="5" fill="currentColor"/></svg>
       <svg class="ic ic-dots" viewBox="0 0 48 48" fill="currentColor"><circle cx="13" cy="26" r="4.5"/><circle cx="24" cy="26" r="4.5"/><circle cx="35" cy="26" r="4.5"/></svg>
       <svg class="ic ic-wave" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><path d="M10 20v8M18 14v20M26 10v28M34 16v16M40 21v6"/></svg>
       <svg class="ic ic-moon" viewBox="0 0 48 48" fill="currentColor"><path d="M30 8a16 16 0 1 0 10 28A14 14 0 0 1 30 8z"/></svg>
     </button>
-    <div class="talklabel" id="talklabel">Talk</div>
+    <div class="talklabel" id="talklabel"></div>
   </div>
   <div class="topics" id="topics" role="group" aria-label="Pick something to do">
-    <button class="topic t-maths" type="button" data-topic="maths" aria-label="Maths"><svg viewBox="0 0 32 32"><path d="M6 8h8M10 4v8"/><path d="M18 6l8 8M26 6l-8 8"/><path d="M6 24h8"/><circle class="f" cx="10" cy="20" r="1.4"/><circle class="f" cx="10" cy="28" r="1.4"/><path d="M18 20h8M18 26h8"/></svg>Maths</button>
-    <button class="topic t-phonics" type="button" data-topic="phonics" aria-label="Phonics"><svg viewBox="0 0 32 32"><path d="M7 25l5-14 5 14M9.3 20h5.4"/><path d="M21 12c2.5 1 4 3 4 5s-1.5 4-4 5"/><path d="M23 7c4.5 2 7 6 7 10s-2.5 8-7 10"/></svg>Phonics</button>
-    <button class="topic t-world" type="button" data-topic="world" aria-label="World"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="M5 16h22"/><path d="M16 5c4.5 5 4.5 17 0 22M16 5c-4.5 5-4.5 17 0 22"/></svg>World</button>
-    <button class="topic t-animals" type="button" data-topic="animals" aria-label="Animals"><svg viewBox="0 0 32 32"><ellipse cx="10.5" cy="10" rx="2.3" ry="3"/><ellipse cx="21.5" cy="10" rx="2.3" ry="3"/><ellipse cx="5" cy="16.5" rx="2.2" ry="2.8"/><ellipse cx="27" cy="16.5" rx="2.2" ry="2.8"/><path d="M16 15c4.5 0 8 3.5 8 7 0 2.5-2 4.2-4.2 3.6-1.5-.4-2.4-1.3-3.8-1.3s-2.3.9-3.8 1.3C10 26.2 8 24.5 8 22c0-3.5 3.5-7 8-7z"/></svg>Animals</button>
-    <button class="topic t-quiz" type="button" data-topic="quiz" aria-label="Quiz"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="11"/><path d="M12.5 12.5a3.5 3.5 0 1 1 5 3.2c-1 .6-1.5 1.3-1.5 2.3"/><circle class="f" cx="16" cy="22" r="1.4"/></svg>Quiz</button>
-    <button class="topic t-draw" type="button" data-topic="draw" aria-label="Draw"><svg viewBox="0 0 32 32"><path d="M7 25l1.5-6L21 6.5a2.2 2.2 0 0 1 3 0l1.5 1.5a2.2 2.2 0 0 1 0 3L13 23.5z"/><path d="M18.5 9l4.5 4.5M8.5 19l4.5 4.5"/></svg>Draw</button>
-    <button class="topic t-space" type="button" data-topic="space" aria-label="Space"><svg viewBox="0 0 32 32"><path d="M16 4c4 3 6 8 6 13l-6 5-6-5c0-5 2-10 6-13z"/><circle cx="16" cy="13" r="2.2"/><path d="M10 17l-4 4 5 1M22 17l4 4-5 1M16 22v6"/></svg>Space</button>
-    <button class="topic t-dinos" type="button" data-topic="dinos" aria-label="Dinos"><svg viewBox="0 0 32 32"><path d="M5 24c1-6 5-9 10-9h5l3-6h3l-1 6c2 1 3 3 2 5l-2 1v4h-3v-3h-5v3h-3v-4c-2 0-4 1-5 3H5z"/><circle class="f" cx="22" cy="13" r="1.2"/><path d="M10 15l-1-3M13 15l-1-3"/></svg>Dinos</button>
-    <button class="topic t-cars" type="button" data-topic="cars" aria-label="Cars"><svg viewBox="0 0 32 32"><path d="M5 20l2.5-6c.5-1.2 1.5-2 3-2h11c1.5 0 2.5.8 3 2l2.5 6v5H5z"/><path d="M5 20h22M9 12v8M23 12v8"/><circle class="f" cx="10" cy="25" r="2.4"/><circle class="f" cx="22" cy="25" r="2.4"/></svg>Cars</button>
-    <button class="topic t-story" type="button" data-topic="story" aria-label="Story"><svg viewBox="0 0 32 32"><path d="M4 8h8c2 0 4 1 4 3v15c0-2-2-3-4-3H4zM28 8h-8c-2 0-4 1-4 3v15c0-2 2-3 4-3h8z"/><path d="M8 13h4M8 17h4M20 13h4M20 17h4"/></svg>Story</button>
-    <button class="topic t-heroes" type="button" data-topic="heroes" aria-label="Heroes"><svg viewBox="0 0 32 32"><path d="M16 4l3.3 6.8 7.5 1.1-5.4 5.3 1.3 7.5L16 21l-6.7 3.7 1.3-7.5-5.4-5.3 7.5-1.1z"/></svg>Heroes</button>
-    <button class="topic t-surprise" type="button" data-topic="surprise" aria-label="Surprise"><svg viewBox="0 0 32 32"><path d="M5 12h22v5H5zM7 17h18v9H7z"/><path d="M16 12v14"/><path d="M16 12c-3 0-6-1.5-6-4s3.5-2.5 6 4c2.5-6.5 6-6.5 6-4s-3 4-6 4z"/></svg>Surprise</button>
+    <button class="topic" type="button" data-topic="maths" aria-label="Maths"><img src="/img/btn/maths.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="phonics" aria-label="Phonics"><img src="/img/btn/phonics.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="world" aria-label="World"><img src="/img/btn/world.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="animals" aria-label="Animals"><img src="/img/btn/animals.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="quiz" aria-label="Quiz"><img src="/img/btn/quiz.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="draw" aria-label="Draw"><img src="/img/btn/draw.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="space" aria-label="Space"><img src="/img/btn/space.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="dinos" aria-label="Dinosaurs"><img src="/img/btn/dinos.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="cars" aria-label="Cars"><img src="/img/btn/cars.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="story" aria-label="Story"><img src="/img/btn/story.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="heroes" aria-label="Superheroes"><img src="/img/btn/heroes.webp" alt=""></button>
+    <button class="topic" type="button" data-topic="surprise" aria-label="Surprise me"><img src="/img/btn/surprise.webp" alt=""></button>
   </div>
 </div>
 </div>
@@ -220,6 +204,6 @@ input[type=number]{width:90px}
 </div>
 
 <script src="/engine.js?v=8"></script>
-<script src="/app.js?v=14"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>
