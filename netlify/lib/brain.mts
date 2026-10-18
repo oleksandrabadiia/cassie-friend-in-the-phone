@@ -3,6 +3,12 @@ import { addUsage, getProfile, saveProfile, profileSummary } from "./common.mts"
 import { CASSIE_PROMPT, FORMAT_RULES } from "./prompt.mts";
 
 const HINT = "A five-year-old British boy called William talking to Cassie, his friend in the phone. Sometimes his mum Ara or dad James: 'Cassie, it's Mummy here', 'Daddy speaking', 'it's Ara', 'back to William'. Luka, Loly and Pop, dinosaurs, Spider-Man, phonics sounds like sss, mmm, ch, sh, th.";
+// "(Mummy speaking) " etc. — William is assumed unless a grown-up says who they are or taps the grown-up button
+export function speakerTag(b: any): string {
+  if (!b?.parent) return "";
+  const who = b.speaker === "Mummy" || b.speaker === "Daddy" ? b.speaker : "A grown-up";
+  return `(${who} speaking) `;
+}
 export class OpenAIError extends Error { constructor(public code: string, public status: number) { super(code); } }
 
 export async function transcribe(key: string, audio: File, seconds: number): Promise<string> {
@@ -24,11 +30,11 @@ const MOODS = new Set(["happy", "front", "think", "surprise", "wink", "tired", "
 const PRICE: Record<string, [number, number]> = { "gpt-4.1-mini": [0.4, 1.6], "gpt-4o-mini": [0.15, 0.6], "gpt-5-mini": [0.25, 2] };
 
 const TOPICS: Record<string, string> = {
-  maths: "William just tapped the MATHS button. Start a fun little counting or simple maths game right now (counting objects, one more/one less, simple adding with superheroes, dinosaurs or sweets). One question at a time.",
+  maths: "William just tapped the MATHS button. Start a fun little counting or simple maths game right now and keep it going for several rounds (counting objects, one more/one less, simple adding with superheroes, dinosaurs or sweets). One question at a time.",
   phonics: "William just tapped the PHONICS button. Start a short, funny phonics mission now with a character you have not used recently (dinosaur, Loly and Pop, a Hogwarts owl, a pirate, a robot, a pumpkin… never superheroes), using his Phase 3 sounds and the saved profile. One sound at a time.",
   world: "William just tapped the WORLD button. Share one amazing, simple fact about the world (countries, oceans, weather, volcanoes, people) and ask him a playful question about it.",
   animals: "William just tapped the ANIMALS button. Play an animal game: a 'which animal am I?' riddle, animal sounds, or an amazing animal fact. Keep it short.",
-  quiz: "William just tapped the QUIZ button. Run a quick, easy quiz for a five-year-old, one question at a time, celebrating effort.",
+  quiz: "William just tapped the QUIZ button. Run a quick, easy quiz for a five-year-old: about five questions, one at a time, reacting to each answer before asking the next.",
   draw: "William just tapped the DRAW button. Suggest one specific, unexpected drawing or craft idea from your drawing list that you have not suggested before (check the notes), explain the first tiny step, then ask him to describe it as he goes.",
   space: "William just tapped the SPACE button. Start a space adventure or share a simple space fact (planets, the Moon, rockets, astronauts) and ask one question.",
   dinos: "William just tapped the DINOSAURS button. Start a dinosaur game or adventure: roaring contest, 'guess the dinosaur', or a fact about T. rex, Triceratops or Stegosaurus. One thing at a time.",
@@ -37,6 +43,7 @@ const TOPICS: Record<string, string> = {
   heroes: "William just tapped the SUPERHEROES button. Start a short superhero mission with Spider-Man, Batman, Superman or a hero he invents, and weave a little counting or a phonics sound into it.",
   surprise: "William just tapped the SURPRISE button. Pick something unexpected from his interests that you haven't done recently, preferably a learning game dressed up as fun, and jump straight in.",
 };
+const ACTIVITY_NAMES: Record<string, string> = { maths: "maths game", phonics: "phonics mission", world: "world facts chat", animals: "animal game", quiz: "quiz", draw: "drawing activity", space: "space adventure", dinos: "dinosaur game", cars: "cars game", story: "story you are making up together", heroes: "superhero mission", surprise: "game" };
 // What's coming up, so Cassie can talk about Halloween, birthdays and Christmas at the right time.
 function upcoming(): string {
   const uk = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/London" }));
@@ -54,7 +61,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
 
 // Streams Cassie's words as they are written (onText gets each new bit), then returns the whole reply + mood.
 export async function thinkStream(key: string, body: any, onText: (t: string) => void, onMood: (m: string) => void = () => {}): Promise<{ say: string; mood: string }> {
-  const history = Array.isArray(body.messages) ? body.messages.slice(-16) : [];
+  const history = Array.isArray(body.messages) ? body.messages.slice(-30) : [];
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
   const profile = await getProfile();
 
@@ -62,9 +69,11 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
   const situation = [
     `It is ${now} (UK time).`,
     upcoming(),
-    body.start ? "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only." : "",
+    body.start && body.resume && history.length ? "William has come back to the app after a little break. The conversation above is from earlier today. Welcome him back warmly in a fresh way and offer to carry on with what you were doing (say what it was), or do something new. One question only." : "",
+    body.start && !(body.resume && history.length) ? (body.parent ? "A grown-up has just opened the app in Parent Mode. Greet them warmly and briefly." : "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only.") : "",
+    !body.topic && body.activity && ACTIVITY_NAMES[body.activity] && !body.parent ? `You are in the middle of the ${ACTIVITY_NAMES[body.activity]} William picked a moment ago (see the conversation). KEEP IT GOING: react to what he just said, then give the next question, clue, step or part of the story, one at a time. Don't wrap it up after one go. Only stop if he says he wants to do something else, changes the subject, or seems bored; then follow him.` : "",
     body.topic ? TOPICS[body.topic] || "" : "",
-    body.parent ? "PARENT MODE IS ON: a grown-up (William's mum Ara or dad James) is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Grown-up speaking) are theirs." : "",
+    body.parent ? `PARENT MODE IS ON: ${body.speaker === "Mummy" ? "William's mum Ara" : body.speaker === "Daddy" ? "William's dad James" : "a grown-up (William's mum Ara or dad James; you don't know which yet, so don't guess — if it matters, ask)"} is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Mummy speaking), (Daddy speaking) or (A grown-up speaking) are theirs.` : "WHO IS TALKING: assume it is William unless a message is marked as a grown-up or someone says it's Mummy or Daddy. Other voices in the room (grown-ups chatting nearby) may get mixed in; if a message makes no sense coming from William, gently ask him what he meant rather than answering the grown-up chatter.",
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
 
@@ -74,7 +83,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
     { role: "system", content: situation + "\n\n" + FORMAT_RULES },
     ...history.map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "").slice(0, 1500) })),
   ];
-  if (body.start && !history.length) messages.push({ role: "user", content: "(William opens the app and looks at you.)" });
+  if (body.start) messages.push({ role: "user", content: body.parent ? "(A grown-up opens the app.)" : history.length ? "(William opens the app again.)" : "(William opens the app and looks at you.)" });
 
   const models = [Netlify.env.get("CASSIE_MODEL"), "gpt-4o-mini", "gpt-4.1-mini", "gpt-5-mini"].filter(Boolean) as string[];
   for (const model of models) {

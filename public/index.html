@@ -54,6 +54,14 @@ body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:h
 .ic-dots circle:nth-child(2){animation-delay:.15s}.ic-dots circle:nth-child(3){animation-delay:.3s}
 @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .talklabel{display:none}
+/* small clay grown-up button, to the right of the talk button: tap to talk as Mummy/Daddy, tap again for William */
+.talkwrap{position:relative}
+.pmode{position:absolute;left:calc(50% + 78px);top:50%;transform:translateY(-50%);width:54px;height:54px;border:0;padding:0;cursor:pointer;
+  background:url('/img/btn/talk-blank.webp') center/contain no-repeat;opacity:.8;transition:transform .12s,opacity .2s;filter:drop-shadow(0 4px 6px rgba(76,29,122,.16))}
+.pmode svg{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:28px;height:28px;color:#f5e9d8;filter:drop-shadow(0 1px 1px rgba(60,20,90,.35))}
+.pmode[data-on="true"]{opacity:1;transform:translateY(-50%) scale(1.08);filter:drop-shadow(0 0 0 #8e4fd6) drop-shadow(0 0 2px #8e4fd6) drop-shadow(0 0 2px #8e4fd6) drop-shadow(0 0 7px rgba(142,79,214,.7))}
+.pmode.pressed{transform:translateY(calc(-50% + 2px)) scale(.95)}
+@media (max-height:640px){.pmode{left:calc(50% + 56px);width:44px;height:44px}.pmode svg{width:22px;height:22px}}
 .topics{width:100%;max-width:372px;display:grid;grid-template-columns:repeat(6,1fr);gap:6px 2px;padding:0;margin-top:14px;margin-bottom:14px}
 .topic{display:block;border:0;background:transparent;padding:0;cursor:pointer;aspect-ratio:360/300;transition:transform .1s;position:relative;-webkit-touch-callout:none}
 .topic img{width:100%;height:100%;object-fit:contain;display:block;pointer-events:none}
@@ -121,6 +129,9 @@ input[type=number]{width:90px}
       <svg class="ic ic-dots" viewBox="0 0 48 48" fill="currentColor"><circle cx="13" cy="26" r="4.5"/><circle cx="24" cy="26" r="4.5"/><circle cx="35" cy="26" r="4.5"/></svg>
       <svg class="ic ic-wave" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"><path d="M10 20v8M18 14v20M26 10v28M34 16v16M40 21v6"/></svg>
       <svg class="ic ic-moon" viewBox="0 0 48 48" fill="currentColor"><path d="M30 8a16 16 0 1 0 10 28A14 14 0 0 1 30 8z"/></svg>
+    </button>
+    <button class="pmode" id="pmode" type="button" data-on="false" aria-pressed="false" aria-label="Grown-up talking (tap again for William)">
+      <svg viewBox="0 0 32 32" fill="currentColor"><circle cx="16" cy="9.5" r="5.5"/><path d="M5.5 29c0-8 4.5-12.5 10.5-12.5S26.5 21 26.5 29z"/></svg>
     </button>
     <div class="talklabel" id="talklabel"></div>
   </div>
@@ -206,6 +217,6 @@ input[type=number]{width:90px}
 </div>
 
 <script src="/engine.js?v=10"></script>
-<script src="/app.js?v=27"></script>
+<script src="/app.js?v=28"></script>
 </body>
 </html>

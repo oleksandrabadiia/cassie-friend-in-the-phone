@@ -3,15 +3,19 @@
 // Response: newline-separated JSON: {"mood":"…"} first, then {"t":"words…"} … then {"done":true,"say":"…","mood":"…"} (or {"error":"…"}).
 import type { Config, Context } from "@netlify/functions";
 import { addUsage, checkCode, json, openaiKey, overBudget } from "../lib/common.mts";
-import { thinkStream, OpenAIError } from "../lib/brain.mts";
+import { thinkStream, speakerTag, OpenAIError } from "../lib/brain.mts";
 
 export default async (req: Request, _ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
   const key = openaiKey(); if (!key) return json({ error: "no-key" }, 500);
   if (await overBudget()) return json({ error: "budget" }, 402);
   const body: any = await req.json().catch(() => ({}));
-  const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-15);
-  if (typeof body.text === "string") messages.push({ role: "user", content: (body.parent ? "(Grown-up speaking) " : "") + (body.text.trim() || "(William said something but it was too quiet or unclear to hear.)") });
+  const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-30);
+  if (typeof body.text === "string") {
+    const content = speakerTag(body) + (body.text.trim() || "(William said something but it was too quiet or unclear to hear.)");
+    const last = messages[messages.length - 1];
+    if (!(last && last.role === "user" && last.content === content)) messages.push({ role: "user", content });   // the phone usually sends it already
+  }
   const heardSeconds = Math.min(60, Number(body.heardSeconds) || 0);
   const enc = new TextEncoder();
   const stream = new ReadableStream({

@@ -177,7 +177,7 @@ async function startListening(auto,opts={}){
   const stream=micStream, mime=pickMime();
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
-  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false,token:playToken};
+  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
   rec.onstop=()=>onRecorded();
   rec.start(250);
@@ -194,7 +194,7 @@ async function startListening(auto,opts={}){
       const thr=Math.max(0.018,noise*3);
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
       if(recInfo.heard&&t-lastLoud>S.pause) return stopListening();
-      if(!recInfo.heard&&t>(auto?7000:9000)){ recInfo.cancelled=true; return stopListening(); }
+      if(!recInfo.heard&&t>(auto?12000:12000)){ recInfo.cancelled=true; return stopListening(); }
       if(t>20000) return stopListening();
     }
     requestAnimationFrame(tick);
@@ -203,21 +203,40 @@ async function startListening(auto,opts={}){
 }
 function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
 
-const history=[];
+const saved=store.get('history',null);
+const history=(saved&&Array.isArray(saved.m)&&Date.now()-(saved.at||0)<6*3600e3)?saved.m.slice(-40):[];
+const resumed=history.length>0;
+function remember(m){ history.push(m); store.set('history',{at:Date.now(),m:history.slice(-40)}); }
+// the game William picked with a topic button, so Cassie keeps it going over several turns
+let activity=null, activityTurns=0;
 // a grown-up announcing themselves ("it's Mummy here", "Daddy speaking", "it's Ara") switches Cassie to Parent Mode
-let parentMode=false;
+let parentMode=false, speaker=null;   // speaker: 'Mummy' | 'Daddy' | null (a grown-up, not sure which)
+const tag=()=>parentMode?'('+(speaker||'A grown-up')+' speaking) ':'';
+function whoFrom(t){ return /\b(dad|daddy|james)\b/i.test(t)?'Daddy':/\b(mum|mummy|mom|mommy|ara)\b/i.test(t)?'Mummy':null; }
+function setParent(on,who){
+  const was=parentMode; parentMode=on; if(on){ if(who) speaker=who; } else speaker=null;
+  const b=$('pmode'); if(b){ b.dataset.on=on?'true':'false'; b.setAttribute('aria-pressed',on?'true':'false'); }
+  if(was&&!on&&started) remember({role:'user',content:'(William is talking to Cassie again now.)'});
+}
 const PARENT_ON=/^(?:(?:hi|hello|hey|cassie|okay|ok|um|so|right)[,!.\s]*){0,4}(?:it'?s\s+|this is\s+)?(?:william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b[^.?!]{0,8}\b(here|hear|speaking|talking|calling)\b|\b(it'?s|this is|hi,? it'?s|hello,? it'?s)\s+(william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b|\bparent mode\b|\bwilliam'?s (mum|mom|dad)\b/i;
 const PARENT_OFF=/back to william|william'?s (here|back|turn)|william is (here|back)|over to william/i;
 function checkParent(heard){
   if(!heard) return;
-  if(parentMode&&PARENT_OFF.test(heard)){ parentMode=false; }
-  else if(!parentMode&&PARENT_ON.test(heard)){ parentMode=true; }
+  if(parentMode&&PARENT_OFF.test(heard)){ setParent(false); }
+  else if(PARENT_ON.test(heard)){ setParent(true,whoFrom(heard)); }
 }
 // ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
 const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Let me think…','Oh yeah!','Nice!','Wow!','Gotcha!','Aha!','Ha!','Ooh, good one!','Right…','Hmm, let me see…','Oh! Okay, okay…','Brilliant!'];
 const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
 const calloutBufs={};
 async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t,'wink')}); }catch(e){} } }
+const CLIPS={nudge:'I’m still here! Have a little think, then tell me.',tap:'Tap the big purple button when you want to talk to me!',sleep:'That’s all our Cassie time for today. Let’s play again tomorrow!',oops:'Oops, my ears went wonky! Tap the button and say it again.',grownup:'Uh-oh, I need a grown-up to check my settings.'};
+const clipBufs={};
+async function loadClips(){ const v=S.voice; if(clipBufs[v]) return; clipBufs[v]={}; for(const k in CLIPS){ try{ clipBufs[v][k]=await fetchAudio(CLIPS[k],'gentle'); }catch(e){} } }
+async function playClip(k){ const b=(clipBufs[S.voice]||{})[k]; if(!b||!ac) return false; await playBuffer(b,'gentle'); face().speaking(false); return true; }
+function showError(e){ say(friendlyError(e),true); markActive(false); setState('idle');
+  const cfg=['wrong-code','no-key','bad-key','budget','no-google-key','bad-google-key'].includes(e&&e.code);
+  playClip(cfg?'grownup':'oops').then(()=>{ if(state==='speaking') setState('idle'); markActive(false); }); }
 const fillerBufs={};  // voice -> [AudioBuffer]
 async function fetchAudio(text,mood){
   const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice,mood:mood||'front'})});
@@ -236,7 +255,12 @@ function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return n
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
   if(info.cancelled||!info.heard){ Ears.cancel(); if(info.token!==playToken) return;   // something else (a topic button) has taken over
-    markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
+    if(info.cancelled&&info.heard) { markActive(false); setState('idle'); return; }
+    // he didn't say anything: say so out loud (no more silent stops), give him one more go, then rest
+    const tok=playToken;
+    if(info.auto&&!info.nudged&&minutesLeft()>0){ await playClip('nudge'); if(tok!==playToken) return; return startListening(true,{nudged:true}); }
+    await playClip('tap'); if(tok!==playToken) return;
+    markActive(false); setState('idle'); return; }
   setState('thinking');
   const seconds=(performance.now()-info.started)/1000;
   const token=++playToken;
@@ -246,25 +270,25 @@ async function onRecorded(){
     if(token!==playToken) return;
     if(heard!==null){
       checkParent(heard);
-      history.push({role:'user',content:(parentMode?'(Grown-up speaking) ':'')+(heard||'(William said something but it was too quiet or unclear to hear.)')});
+      remember({role:'user',content:tag()+(heard||'(William said something but it was too quiet or unclear to hear.)')});
       await talkStream({text:heard,heardSeconds:seconds},token);
     }else{
       // 2) the slower way: send the recording up and wait for the whole answer
       const blob=new Blob(chunks,{type:info.mime});
       const ext=info.mime.includes('webm')?'webm':info.mime.includes('ogg')?'ogg':'m4a';
       const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
-      fd.append('meta',JSON.stringify({messages:history.slice(-15),minutesLeft:minutesLeft(),parent:parentMode}));
+      fd.append('meta',JSON.stringify({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:nextActivity()}));
       const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
       const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
       const {heard:h,say:text,mood}=await turnP;
       if(token!==playToken) return;
       checkParent(h);
-      history.push({role:'user',content:(parentMode?'(Grown-up speaking) ':'')+(h||'(William said something but it was too quiet or unclear to hear.)')});
-      history.push({role:'assistant',content:text});
+      remember({role:'user',content:tag()+(h||'(William said something but it was too quiet or unclear to hear.)')});
+      remember({role:'assistant',content:text});
       await fillerDone;
       await speakReply(text,mood,token);
     }
-  }catch(e){ console.error(e); if(token!==playToken) return; markActive(false); setState('idle'); say(friendlyError(e),true); }
+  }catch(e){ console.error(e); if(token!==playToken) return; showError(e); }
 }
 
 // ---------- Cassie replies ----------
@@ -272,13 +296,15 @@ let currentSource=null, playToken=0;
 async function cassieReplies(isStart,topic){
   setState('thinking');
   const token=++playToken;
-  if(topic) history.push({role:'user',content:'(William tapped the '+topic+' button.)'});
-  await talkStream({start:isStart,topic},token);
-  loadFillers().then(loadCallouts);
+  if(topic){ remember({role:'user',content:'(William tapped the '+topic+' button.)'}); activity=topic; activityTurns=0; }
+  if(isStart) activity=null;
+  const p=talkStream({start:isStart,topic,resume:isStart&&resumed},token);
+  loadClips().then(loadFillers).then(loadCallouts);
+  await p;
 }
 // Cassie's words arrive bit by bit; each finished sentence is voiced and played while the next is still being written
 async function talkStream(req,token){
-  const body=Object.assign({messages:history.slice(-16),minutesLeft:minutesLeft(),parent:parentMode},req);
+  const body=Object.assign({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:req.topic?null:nextActivity()},req);
   const r=await api('/api/talk',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const reader=r.body.getReader(), dec=new TextDecoder();
   const sp=new Speaker(token); let pending='', text='', spoken=0, final=null;
@@ -302,12 +328,14 @@ async function talkStream(req,token){
   clearTimeout(fillerTimer);
   const full=(final&&final.say)||text;
   if(full.slice(spoken).trim()) sp.push(full.slice(spoken).trim());
-  say(full); scrollCaption(Math.max(3,(full.length-spoken)/14)); history.push({role:'assistant',content:full});
+  say(full); scrollCaption(Math.max(3,(full.length-spoken)/14)); remember({role:'assistant',content:full});
   await sp.end();
-  if(token!==playToken||state!=='speaking') return;
+  if(token!==playToken) return;   // (before: if her voice failed to load she stayed stuck on "thinking")
   face().speaking(false);
   afterReply();
 }
+// the chosen game stays "on" for about 10 of William's answers, unless he picks something else
+function nextActivity(){ if(!activity) return null; if(++activityTurns>10){ activity=null; return null; } return activity; }
 function afterReply(){
   if(minutesLeft()<=0) return goToSleep();
   if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
@@ -340,7 +368,7 @@ async function speakReply(text,mood,token){
   while(rest){ const m=rest.match(/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/); if(!m){ parts.push(rest); break; } parts.push(m[1]); rest=rest.slice(m[0].length); }
   parts.forEach(p=>sp.push(p));
   await sp.end();
-  if(token!==playToken||state!=='speaking') return;
+  if(token!==playToken) return;
   face().speaking(false);
   afterReply();
 }
@@ -382,7 +410,9 @@ setInterval(()=>{
   else if(Date.now()-bargeSince>380){ bargeSince=0; interrupt(); startListening(false,{interrupted:true}); }
 },40);
 
-function goToSleep(){ markActive(false); setState('sleeping'); say('That’s all our Cassie time for today. Let’s play again tomorrow!'); }
+let sleptSaid=false;
+function goToSleep(){ markActive(false); setState('sleeping'); say(CLIPS.sleep);
+  if(!sleptSaid){ sleptSaid=true; const b=(clipBufs[S.voice]||{}).sleep; if(b&&ac){ const src=ac.createBufferSource(); src.buffer=b; src.connect(ac.destination); src.start(); } } }
 
 // ---------- when nobody is talking: be silly, call out once, then get sleepy ----------
 let calloutsDone=0;
@@ -421,7 +451,7 @@ talkBtn.addEventListener('click',async ()=>{
     started=true;
     try{ await getMic(); }catch(e){ say('Cassie needs the microphone. A grown-up can allow it in Settings.',true); started=false; return; }
     micGraph().then(()=>Ears.connect()).catch(()=>{});
-    try{ await cassieReplies(true); }catch(e){ console.error(e); started=false; markActive(false); setState('idle'); say(friendlyError(e),true); }
+    try{ await cassieReplies(true); }catch(e){ console.error(e); started=false; showError(e); }
     return;
   }
   startListening(false);
@@ -435,8 +465,18 @@ document.querySelectorAll('.topic').forEach(b=>b.addEventListener('click',async 
   interrupt();
   try{ if(!started){ started=true; try{ await getMic(); micGraph().then(()=>Ears.connect()); }catch(e){} }
     await cassieReplies(false,b.dataset.topic); }
-  catch(e){ console.error(e); markActive(false); setState('idle'); say(friendlyError(e),true); }
+  catch(e){ console.error(e); showError(e); }
 }));
+// small grown-up button next to the talk button: tap to talk as Mummy or Daddy, tap again for William
+$('pmode').addEventListener('pointerdown',()=>{ const b=$('pmode'); b.classList.add('pressed'); setTimeout(()=>b.classList.remove('pressed'),350); });
+$('pmode').addEventListener('click',async ()=>{
+  audioCtx(); if(!S.code){ openSetup(); return; }
+  setParent(!parentMode,null);
+  if(!started||state==='sleeping'||state==='thinking') return;   // first tap of the big button will greet the grown-up
+  if(state==='listening'){ recInfo&&(recInfo.cancelled=true); stopListening(); }
+  interrupt();
+  if(parentMode) startListening(false); else { try{ await cassieReplies(false); }catch(e){ showError(e); } }
+});
 $('cv').addEventListener('click',()=>{ if(state==='idle'||state==='sleeping'){ Math.random()<.4?face().jump():face().giggle(); } });
 
 // ---------- family code ----------

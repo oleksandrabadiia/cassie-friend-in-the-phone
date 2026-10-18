@@ -95,3 +95,13 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
 - Memories are dated (`18 Oct: …`), last 45 shown to the brain, so she doesn't repeat games/jokes day to day.
 - `upcoming()` in brain.mts tells her about events within 45 days: Halloween, Bonfire Night, Daddy's (James) birthday 10 Dec — make a card —, William's birthday 20 Dec, Christmas, etc.
 - On-screen words (caption) removed completely, 18 Oct. `say()` in app.js now only logs to the console.
+- 18 Oct fixes: no more silent stops (on-screen words are off, so she now SAYS "I'm still here…", "Tap the big purple
+  button…", time's-up and "Oops" lines; clips pre-made per voice in `CLIPS`). Auto-listening waits 12 s, nudges once, then
+  listens again. If her voice fails to load she no longer gets stuck on "thinking".
+- Chat memory: last 40 turns kept on the phone for 6 hours (`localStorage cassie.history`), last 30 sent to the brain;
+  reopening the app welcomes him back and offers to carry on. The server no longer doubles William's last message.
+- Topic games keep going: the tile picked stays the `activity` for ~10 answers and the brain is told to continue it.
+- Who is talking: assumed William. "It's Mummy/Daddy" switches to Parent Mode with the right name; a small clay
+  grown-up button to the right of the talk button (`#pmode`, glows when on) toggles it by hand. Tags: "(Mummy speaking)".
+- Phonics prompt now lists William's school sound mat (Phase 2 + 3 sounds and tricky words; Phase 5 is for later).
+

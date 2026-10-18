@@ -1,7 +1,7 @@
 // One round trip: hear William, then decide what Cassie says (faster than two separate calls).
 import type { Config, Context } from "@netlify/functions";
 import { checkCode, json, openaiKey, overBudget } from "../lib/common.mts";
-import { transcribe, think, OpenAIError } from "../lib/brain.mts";
+import { transcribe, think, speakerTag, OpenAIError } from "../lib/brain.mts";
 
 export default async (req: Request, _ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
@@ -12,9 +12,9 @@ export default async (req: Request, _ctx: Context) => {
   let meta: any = {}; try { meta = JSON.parse(String(form.get("meta") || "{}")); } catch {}
   try {
     const heard = await transcribe(key, form.get("audio") as File, seconds);
-    const messages = (Array.isArray(meta.messages) ? meta.messages : []).slice(-15);
-    messages.push({ role: "user", content: (meta.parent ? "(Grown-up speaking) " : "") + (heard || "(William said something but it was too quiet or unclear to hear.)") });
-    const reply = await think(key, { messages, minutesLeft: meta.minutesLeft, parent: !!meta.parent });
+    const messages = (Array.isArray(meta.messages) ? meta.messages : []).slice(-30);
+    messages.push({ role: "user", content: speakerTag(meta) + (heard || "(William said something but it was too quiet or unclear to hear.)") });
+    const reply = await think(key, { messages, minutesLeft: meta.minutesLeft, parent: !!meta.parent, speaker: meta.speaker, activity: meta.activity });
     return json({ heard, ...reply });
   } catch (e: any) { return json({ error: e instanceof OpenAIError ? e.code : "turn-failed" }, e?.status || 502); }
 };
