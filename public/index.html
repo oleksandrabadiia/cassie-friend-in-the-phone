@@ -36,9 +36,9 @@
 html,body{height:100%;margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .app{height:100%;display:flex;flex-direction:column;align-items:center;
-  padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom));
+  padding-top:max(4px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom));
   padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));gap:6px}
-.stage{flex:1;min-height:0;width:100%;max-width:560px;display:flex;align-items:flex-start;justify-content:center;margin-top:-12px;overflow:visible}
+.stage{flex:1;min-height:0;width:100%;max-width:560px;display:flex;align-items:flex-start;justify-content:center;margin-top:-22px;overflow:visible}
 #cv{display:block;max-width:122%;max-height:122%}
 .caption{height:2.75em;margin-top:-4px;overflow-y:auto;width:100%;max-width:34ch;text-align:center;font-family:var(--display);font-weight:500;font-size:.95rem;line-height:1.35;color:var(--ink);padding:0 4px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;mask-image:linear-gradient(#000 80%,transparent);-webkit-mask-image:linear-gradient(#000 80%,transparent)}
 .caption:empty{mask-image:none;-webkit-mask-image:none}
@@ -66,18 +66,18 @@ body.nowords .caption{display:none}
 .topic svg{width:25px;height:25px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .topic svg .f{fill:#fff;stroke:none}
 .topic[disabled]{opacity:.45}
-.t-maths{--c:#8e5bd1;--d:#5f3a94}
-.t-phonics{--c:#b06ad6;--d:#7a4398}
-.t-world{--c:#6f58c9;--d:#4a3a8c}
-.t-animals{--c:#c77ad0;--d:#8b4f93}
-.t-quiz{--c:#7b3fb3;--d:#4c1d7a}
-.t-draw{--c:#d382c0;--d:#985a88}
-.t-space{--c:#5a46a8;--d:#3b2d72}
-.t-dinos{--c:#9c6fd6;--d:#6a4898}
-.t-cars{--c:#a052c0;--d:#6c3485}
-.t-story{--c:#7f6ad6;--d:#564798}
-.t-heroes{--c:#b45fbf;--d:#7c3d85}
-.t-surprise{--c:#c88ad9;--d:#8c5e99}
+.t-maths{--c:#3f7ee8;--d:#2a56a8}
+.t-phonics{--c:#e8663f;--d:#a8402a}
+.t-world{--c:#2fa883;--d:#1d6e56}
+.t-animals{--c:#e0a52a;--d:#9c701b}
+.t-quiz{--c:#8e4fd6;--d:#5d2f94}
+.t-draw{--c:#ea4f8c;--d:#a8305f}
+.t-space{--c:#3b4f9f;--d:#26336b}
+.t-dinos{--c:#5aa83a;--d:#3a6f25}
+.t-cars{--c:#e8453f;--d:#a82c28}
+.t-story{--c:#2fa0c8;--d:#1e6a86}
+.t-heroes{--c:#f0a21f;--d:#a86f10}
+.t-surprise{--c:#b24fd6;--d:#772f94}
 .parentbtn{z-index:10;touch-action:manipulation;-webkit-touch-callout:none;position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:#cdbfdc;cursor:pointer}
 .parentbtn svg{width:22px;height:22px}
 .parentbtn .prog{position:absolute;inset:0;border-radius:50%;border:3px solid var(--clay);opacity:0}
