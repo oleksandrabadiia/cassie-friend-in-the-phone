@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Cassie</title>
 <meta name="description" content="William's friend in the phone">
 <meta name="theme-color" content="#ffffff">
@@ -34,13 +34,13 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0}
-body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:none;-webkit-text-size-adjust:100%;-webkit-user-select:none;user-select:none}
 .app{height:100%;display:flex;flex-direction:column;align-items:center;
   padding-top:max(4px,env(safe-area-inset-top));padding-bottom:max(10px,env(safe-area-inset-bottom));
   padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right));gap:6px}
 .stage{flex:1;min-height:0;width:100%;max-width:560px;display:flex;align-items:flex-start;justify-content:center;margin-top:-26px;overflow:visible}
 #cv{display:block;max-width:150%;max-height:100%;height:100%}
-.caption{height:2.75em;margin-top:-14px;overflow-y:auto;width:100%;max-width:34ch;text-align:center;font-family:var(--display);font-weight:500;font-size:.95rem;line-height:1.35;color:var(--ink);padding:0 4px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;mask-image:linear-gradient(#000 80%,transparent);-webkit-mask-image:linear-gradient(#000 80%,transparent)}
+.caption{touch-action:pan-y;height:2.75em;margin-top:-14px;overflow-y:auto;width:100%;max-width:34ch;text-align:center;font-family:var(--display);font-weight:500;font-size:.95rem;line-height:1.35;color:var(--ink);padding:0 4px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;mask-image:linear-gradient(#000 80%,transparent);-webkit-mask-image:linear-gradient(#000 80%,transparent)}
 .caption:empty{mask-image:none;-webkit-mask-image:none}
 body.nowords .caption{display:none}
 .caption.small{font-size:.88rem;color:var(--ink-soft)}
@@ -70,7 +70,7 @@ body.nowords .caption{display:none}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--clay-deep);outline-offset:3px}
 /* overlays */
 .sheet{position:fixed;inset:0;background:rgba(58,42,74,.32);display:flex;align-items:flex-end;justify-content:center;z-index:20}
-.panel{background:#fff;width:100%;max-width:520px;max-height:92%;overflow:auto;border-radius:22px 22px 0 0;
+.panel{touch-action:pan-y;background:#fff;width:100%;max-width:520px;max-height:92%;overflow:auto;border-radius:22px 22px 0 0;
   padding:22px max(18px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));
   -webkit-user-select:text;user-select:text}
 .panel h2{font-family:var(--display);font-weight:700;font-size:1.5rem;margin:0 0 4px;color:var(--clay-deep)}
@@ -204,6 +204,6 @@ input[type=number]{width:90px}
 </div>
 
 <script src="/engine.js?v=8"></script>
-<script src="/app.js?v=18"></script>
+<script src="/app.js?v=19"></script>
 </body>
 </html>

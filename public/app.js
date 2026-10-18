@@ -361,6 +361,11 @@ let wake=null; async function keepAwake(){ try{ if('wakeLock' in navigator&&!wak
 talkBtn.addEventListener('click',keepAwake);
 document.addEventListener('visibilitychange',()=>{ if(document.hidden){ stopListening(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
 
+// no pinch or double-tap zoom in Safari
+document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
+document.addEventListener('touchmove',e=>{ if(e.scale&&e.scale!==1) e.preventDefault(); },{passive:false});
+let lastTouch=0; document.addEventListener('touchend',e=>{ const n=Date.now(); if(n-lastTouch<300&&!e.target.closest('button,input,select')) e.preventDefault(); lastTouch=n; },{passive:false});
+
 // ---------- start ----------
 function boot(){
   if(minutesLeft()<=0) goToSleep(); else setState('idle');
