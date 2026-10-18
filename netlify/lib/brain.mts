@@ -42,7 +42,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
   const profile = await getProfile();
 
-  const now = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "long", hour: "2-digit", minute: "2-digit" });
+  const now = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
   const situation = [
     `It is ${now} (UK time).`,
     body.start ? "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only." : "",
