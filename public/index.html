@@ -76,6 +76,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .panel{touch-action:pan-y;background:#fff;width:100%;max-width:520px;max-height:92%;overflow:auto;border-radius:22px 22px 0 0;
   padding:22px max(18px,env(safe-area-inset-right)) max(22px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));
   -webkit-user-select:text;user-select:text}
+.panel{position:relative}
+.panel .x{position:absolute;top:12px;right:14px;width:40px;height:40px;border-radius:50%;border:0;background:var(--clay-soft);color:var(--clay-deep);font-size:1.5rem;line-height:1;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .panel h2{font-family:var(--display);font-weight:700;font-size:1.5rem;margin:0 0 4px;color:var(--clay-deep)}
 .panel h3{font-family:var(--display);font-weight:700;font-size:1.05rem;margin:18px 0 6px;color:var(--ink)}
 .panel p{margin:4px 0 10px;color:var(--ink-soft);line-height:1.45;font-size:.95rem}
@@ -150,6 +152,7 @@ input[type=number]{width:90px}
 <!-- first-time setup: family code -->
 <div class="sheet" id="setup" hidden>
   <form class="panel" id="setupForm">
+    <button class="x" type="button" data-close aria-label="Close">&times;</button>
     <h2>Set up Cassie</h2>
     <p>Grown-ups only. Type the family code once on this phone or iPad. It stops anyone else using Cassie.</p>
     <div class="row"><label for="codeIn">Family code</label><input id="codeIn" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="three words and a number"></div>
@@ -161,6 +164,7 @@ input[type=number]{width:90px}
 <!-- grown-up gate -->
 <div class="sheet" id="gate" hidden>
   <form class="panel" id="gateForm">
+    <button class="x" type="button" data-close aria-label="Close">&times;</button>
     <h2>Grown-ups only</h2>
     <p id="gateQ">What is 7 + 8?</p>
     <div class="row"><label for="gateIn">Answer</label><input id="gateIn" type="number" inputmode="numeric"></div>
@@ -172,6 +176,7 @@ input[type=number]{width:90px}
 <!-- parent settings -->
 <div class="sheet" id="parent" hidden>
   <div class="panel">
+    <button class="x" type="button" data-close aria-label="Close">&times;</button>
     <h2>Cassie settings</h2>
     <p id="keyStatus">Checking Cassie&rsquo;s connection…</p>
 
@@ -207,6 +212,6 @@ input[type=number]{width:90px}
 </div>
 
 <script src="/engine.js?v=9"></script>
-<script src="/app.js?v=23"></script>
+<script src="/app.js?v=24"></script>
 </body>
 </html>

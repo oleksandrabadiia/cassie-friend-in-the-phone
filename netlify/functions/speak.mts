@@ -4,7 +4,7 @@ import { checkCode, json, openaiKey, addUsage, overBudget } from "../lib/common.
 
 const GOOGLE_VOICES = new Set(["en-GB-Chirp3-HD-Aoede", "en-GB-Chirp3-HD-Kore", "en-GB-Chirp3-HD-Leda", "en-GB-Chirp3-HD-Zephyr", "en-GB-Chirp3-HD-Sulafat", "en-GB-Chirp3-HD-Achernar"]);
 const VOICES = new Set(["coral", "shimmer", "sage", "nova", "fable", "alloy", "ballad", "verse", "marin", "cedar"]);
-const BASE = "You are Cassie, a warm, playful young British woman with a smile in your voice, talking to William, a five-year-old boy. British accent. Natural, lively and expressive, like a fun big sister, never flat and never like reading aloud. Clear and a touch slower than adult pace. Stretchy phonics sounds like mmm or sss are held gently. ";
+const BASE = "Always a young woman's voice, never male. You are Cassie, a warm, playful young British woman with a smile in your voice, talking to William, a five-year-old boy. British accent. Natural, lively and expressive, like a fun big sister, never flat and never like reading aloud. Clear and a touch slower than adult pace. Stretchy phonics sounds like mmm or sss are held gently. ";
 const STYLES: Record<string, string> = {
   front: BASE + "Friendly, relaxed, interested.",
   happy: BASE + "Delighted and giggly, bubbling with warmth, little laughs in the voice.",

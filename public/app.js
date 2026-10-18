@@ -179,7 +179,7 @@ async function startListening(auto,opts={}){
   const stream=micStream, mime=pickMime();
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
-  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false};
+  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false,token:playToken};
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
   rec.onstop=()=>onRecorded();
   rec.start(250);
@@ -228,7 +228,8 @@ function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return n
 
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
-  if(info.cancelled||!info.heard){ Ears.cancel(); markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
+  if(info.cancelled||!info.heard){ Ears.cancel(); if(info.token!==playToken) return;   // something else (a topic button) has taken over
+    markActive(false); setState('idle'); if(!info.heard) say('Tap the button when you want to talk to me!',true); return; }
   setState('thinking');
   const seconds=(performance.now()-info.started)/1000;
   const token=++playToken;
@@ -275,7 +276,7 @@ async function talkStream(req,token){
   // a quick "Hmm…" if her first words take a moment
   let fillerTimer=setTimeout(()=>{ if(!sp.started&&token===playToken){ const f=randomFiller(); if(f) sp.filler(f); } },350);
   const cut=()=>{ // hand over every complete sentence
-    const m=text.slice(spoken).match(/^([\s\S]{6,}?[.!?…]+["”’)]?)(\s+)(?=\S)/);
+    const m=text.slice(spoken).match(/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/);
     if(m){ spoken+=m[1].length+m[2].length; sp.push(m[1]); say(text); cut(); }
   };
   while(true){
@@ -327,7 +328,7 @@ async function speakReply(text,mood,token){
   const sp=new Speaker(token); sp.mood=mood;
   say(text); scrollCaption(Math.max(3,text.length/14));
   let rest=text; const parts=[];
-  while(rest){ const m=rest.match(/^([\s\S]{6,}?[.!?…]+["”’)]?)(\s+)(?=\S)/); if(!m){ parts.push(rest); break; } parts.push(m[1]); rest=rest.slice(m[0].length); }
+  while(rest){ const m=rest.match(/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/); if(!m){ parts.push(rest); break; } parts.push(m[1]); rest=rest.slice(m[0].length); }
   parts.forEach(p=>sp.push(p));
   await sp.end();
   if(token!==playToken||state!=='speaking') return;
