@@ -10,8 +10,8 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
 ## How it works
 
 - **Phone app** (`public/`): one page, installable to the Home Screen. Pure HTML/CSS/JS, no build step.
-  - `index.html` — layout + styles. Clay look: logo top-left, clay cog top-right (settings), Cassie's face,
-    2-line scrolling caption, purple clay talk button, 12 cream clay topic tiles in two rows.
+  - `index.html` — layout + styles. Clay look: logo top-left, clay cog top-right (settings), Cassie's face (vertically centred),
+    purple clay talk button, 12 cream clay topic tiles in two rows.
   - `engine.js` — Cassie's face: canvas animation from cut-out layers in `img/` (face, hair strands,
     googly pupils, mouth shapes, 3/4 turn frames, shadow). Exposes `window.CassieFace`
     (`mode`, `mood`, `speaking`, `level`, `giggle`, `jump`, `rollEyes`). No eyelids/blinking (Ara removed them).
@@ -68,7 +68,7 @@ Changing an env var needs a redeploy (push an empty commit, or Netlify → Deplo
 ## Parent settings (in the app)
 
 Tap the clay cog 3 times quickly → answer a sum. Daily minutes (per device, default 20), +10 minutes,
-keep-listening toggle, show-words toggle (off hides the caption and Cassie grows), voice list with ▶
+keep-listening toggle, voice list with ▶
 previews, month spend estimate, William's practised/tricky/likes + memories, clear progress, change code.
 
 ## Working on it
@@ -94,3 +94,4 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
 - Reactions she should use: "Gotcha!", "Wow!", "Love it!", "Cheeky monkey!"; jokes often; "Ooh" rarely.
 - Memories are dated (`18 Oct: …`), last 45 shown to the brain, so she doesn't repeat games/jokes day to day.
 - `upcoming()` in brain.mts tells her about events within 45 days: Halloween, Bonfire Night, Daddy's (James) birthday 10 Dec — make a card —, William's birthday 20 Dec, Christmas, etc.
+- On-screen words (caption) removed completely, 18 Oct. `say()` in app.js now only logs to the console.
