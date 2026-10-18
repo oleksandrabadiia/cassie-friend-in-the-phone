@@ -34,8 +34,8 @@ const TOPICS: Record<string, string> = {
   dinos: "William just tapped the DINOSAURS button. Start a dinosaur game or adventure: roaring contest, 'guess the dinosaur', or a fact about T. rex, Triceratops or Stegosaurus. One thing at a time.",
   cars: "William just tapped the CARS button. Talk cars, racing cars, diggers, trains or monster trucks: a tiny race story or a 'what sound does it make' game.",
   story: "William just tapped the STORY button. Begin a short, silly made-up story and stop after two or three sentences to ask William what happens next. Use characters from your notes if you have any.",
-  heroes: "William just tapped the SUPERHEROES button. Start a superhero mission with Spider-Man, Batman, Superman or a hero he invents.",
-  surprise: "William just tapped the SURPRISE button. Pick something unexpected and fun from his interests that you haven't done recently and jump straight in.",
+  heroes: "William just tapped the SUPERHEROES button. Start a short superhero mission with Spider-Man, Batman, Superman or a hero he invents, and weave a little counting or a phonics sound into it.",
+  surprise: "William just tapped the SURPRISE button. Pick something unexpected from his interests that you haven't done recently, preferably a learning game dressed up as fun, and jump straight in.",
 };
 export async function think(key: string, body: any): Promise<{ say: string; mood: string }> {
   const history = Array.isArray(body.messages) ? body.messages.slice(-16) : [];
@@ -45,7 +45,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
   const now = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "long", hour: "2-digit", minute: "2-digit" });
   const situation = [
     `It is ${now} (UK time).`,
-    body.start ? "William has just opened the app. Greet him." : "",
+    body.start ? "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only." : "",
     body.topic ? TOPICS[body.topic] || "" : "",
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
