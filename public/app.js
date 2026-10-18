@@ -363,9 +363,14 @@ function playBuffer(audio,mood,opts={}){
   const f=face(); f.speaking(true); if(mood&&mood!=='front') f.mood(mood);
   let running=true; const t0=ctx.currentTime;
   const loop=()=>{ if(!running) return; const i=Math.floor((ctx.currentTime-t0)/0.025); f.level(Math.min(1,(env[i]||0)*4)); requestAnimationFrame(loop); };
-  return new Promise(res=>{ src.onended=()=>{ running=false; f.level(0); if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src) currentSource=null; res(); }; src.start(); loop(); });
+  return new Promise(res=>{
+    const finish=()=>{ if(!running) return; running=false; f.level(0); if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src){ currentSource=null; currentStop=null; } res(); };
+    src.onended=finish; currentStop=finish;   // interrupt() also calls finish, so no old mouth loop keeps running
+    src.start(); loop();
+  });
 }
-function interrupt(){ playToken++; if(currentSource){ try{ currentSource.onended=null; currentSource.stop(); }catch(e){} currentSource=null; face().speaking(false); } }
+let currentStop=null;
+function interrupt(){ playToken++; if(currentSource){ const src=currentSource, stop=currentStop; currentSource=null; currentStop=null; try{ src.onended=null; src.stop(); }catch(e){} if(stop) stop(); face().speaking(false); } }
 
 // ---------- William talks over her: if he speaks up while she's talking, she stops and listens ----------
 let bargeFloor=0, bargeSince=0, bargeCal=0;
