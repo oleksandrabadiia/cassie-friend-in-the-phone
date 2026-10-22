@@ -77,7 +77,9 @@ function warmServer(){ const n=Date.now(); if(n-lastWarm<25000||!S.code) return;
 
 // ---------- audio: one AudioContext, unlocked by the first tap ----------
 let ac=null, micStream=null, micAn=null, pcmNode=null;
-function audioCtx(){ if(!ac){ const C=window.AudioContext||window.webkitAudioContext; ac=new C(); } if(ac.state==='suspended') ac.resume(); return ac; }
+// iOS pauses the audio engine after a phone call, Siri, the lock screen or a switch of apps; its state is then 'interrupted' (not 'suspended'), so always try to resume
+function audioCtx(){ if(!ac){ const C=window.AudioContext||window.webkitAudioContext; ac=new C(); } if(ac.state!=='running'){ try{ ac.resume().catch(()=>{}); }catch(e){} } return ac; }
+function audioReady(){ const ctx=audioCtx(); if(ctx.state==='running') return Promise.resolve(ctx); return Promise.race([ctx.resume().then(()=>ctx).catch(()=>ctx),new Promise(r=>setTimeout(()=>r(ctx),600))]); }
 
 // ---------- active-time tracking for the daily limit ----------
 let activeSince=null;
@@ -93,6 +95,7 @@ async function getMic(){
   if(micStream&&micStream.getTracks().some(t=>t.readyState==='live')) return micStream;
   micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   micAn=null; pcmNode=null;
+  for(const t of micStream.getTracks()) t.onended=()=>{ if(micStream&&micStream.getTracks().includes(t)){ micStream=null; micAn=null; pcmNode=null; } };   // a phone call took the mic: ask again next time
   return micStream;
 }
 async function micGraph(){
@@ -460,12 +463,15 @@ function playBuffer(audio,mood,opts={}){
   if(!opts.keepThinking){ setState('speaking'); }
   markActive(true);
   const f=face(); f.speaking(true); if(mood&&mood!=='front') f.mood(mood);
-  let running=true; const t0=ctx.currentTime;
+  let running=true, t0=ctx.currentTime, stopped=false;
   const loop=()=>{ if(!running) return; const i=Math.floor((ctx.currentTime-t0)/0.025); f.level(Math.min(1,(env[i]||0)*4)); requestAnimationFrame(loop); };
   return new Promise(res=>{
-    const finish=()=>{ if(!running) return; running=false; f.level(0); if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src){ currentSource=null; currentStop=null; } res(); };
+    const finish=()=>{ if(!running) return; running=false; stopped=true; f.level(0); if(opts.keepThinking){ f.speaking(false); f.mode('thinking'); } if(currentSource===src){ currentSource=null; currentStop=null; } res(); };
     src.onended=finish; currentStop=finish;   // interrupt() also calls finish, so no old mouth loop keeps running
-    src.start(); loop();
+    // make sure the audio engine is actually running first (after a lock screen or a call it is not), otherwise the clip 'plays' silently
+    audioReady().then(()=>{ if(stopped) return; t0=ctx.currentTime; try{ src.start(); }catch(e){ finish(); return; } loop();
+      // belt and braces: if the engine never started the clip, don't hang the conversation on it
+      setTimeout(()=>{ if(running&&ctx.state!=='running') finish(); }, Math.ceil(audio.duration*1000)+1500); });
   });
 }
 let currentStop=null;
@@ -643,9 +649,15 @@ $('resetYes').addEventListener('click',async ()=>{ try{ await api('/api/status',
 $('changeCode').addEventListener('click',()=>{ $('parent').hidden=true; openSetup(); });
 
 // keep the screen awake while she's chatting
-let wake=null; async function keepAwake(){ try{ if('wakeLock' in navigator&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>wake=null); } }catch(e){} }
+let wake=null, wakeBusy=false; async function keepAwake(){ if(wakeBusy||document.hidden) return; wakeBusy=true; try{ if('wakeLock' in navigator&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>{ wake=null; }); } }catch(e){} wakeBusy=false; }
 talkBtn.addEventListener('click',keepAwake);
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) keepAwake(); if(document.hidden){ stopListening(); Ears.cancel(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ hiddenAt=Date.now(); stopListening(); Ears.cancel(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); return; }
+  // back again: wake the audio engine and the screen lock; if it was only a moment, carry on listening so the chat doesn't just die
+  keepAwake(); if(ac) audioReady();
+  if(started&&S.handsFree&&state==='idle'&&hiddenAt&&Date.now()-hiddenAt<90000&&minutesLeft()>0&&$('parent').hidden) setTimeout(()=>{ if(state==='idle') startListening(true); },400);
+});
 
 // no pinch or double-tap zoom in Safari
 document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
