@@ -20,9 +20,9 @@ const STYLES: Record<string, string> = {
 export default async (req: Request, ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
   const key = openaiKey(); if (!key) return json({ error: "no-key" }, 500);
-  if (await overBudget()) return json({ error: "budget" }, 402);
-
   const body: any = await req.json().catch(() => ({}));
+  if (body.warm) return json({ ok: true });   // the phone pokes this while William talks, so the function is awake when his words arrive
+  if (await overBudget()) return json({ error: "budget" }, 402);
   const t0 = Date.now();
   const text = String(body.text || "").slice(0, 600);
   if (!text) return json({ error: "no-text" }, 400);

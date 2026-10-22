@@ -70,6 +70,11 @@ function friendlyError(e){
   }
 }
 
+// while William is talking, poke the two reply functions so they are awake (a sleeping one adds up to a second or two)
+let lastWarm=0;
+function warmServer(){ const n=Date.now(); if(n-lastWarm<25000||!S.code) return; lastWarm=n;
+  for(const path of ['/api/talk','/api/speak']) api(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({warm:true})}).catch(()=>{}); }
+
 // ---------- audio: one AudioContext, unlocked by the first tap ----------
 let ac=null, micStream=null, micAn=null, pcmNode=null;
 function audioCtx(){ if(!ac){ const C=window.AudioContext||window.webkitAudioContext; ac=new C(); } if(ac.state==='suspended') ac.resume(); return ac; }
@@ -194,7 +199,7 @@ async function startListening(auto,opts={}){
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
   recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,quiet:false,maybe:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
-  keepAwake();
+  keepAwake(); warmServer();
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
   rec.onstop=()=>onRecorded();
   rec.start(250);
@@ -515,7 +520,7 @@ talkBtn.addEventListener('click',async ()=>{
   if(state==='speaking'){ interrupt(); return startListening(false); }
   if(minutesLeft()<=0) return goToSleep();
   if(!started){
-    started=true;
+    started=true; warmServer();
     try{ await getMic(); }catch(e){ say('Cassie needs the microphone. A grown-up can allow it in Settings.',true); started=false; return; }
     micGraph().then(()=>Ears.connect()).catch(()=>{});
     try{ await cassieReplies(true); }catch(e){ console.error(e); started=false; showError(e); }

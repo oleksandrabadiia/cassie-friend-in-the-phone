@@ -89,10 +89,11 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
 
+  // the big unchanging part comes first and on its own, so OpenAI's prompt cache can reuse it (cheaper and quicker to start)
   const messages = [
-    { role: "system", content: CASSIE_PROMPT },
+    { role: "system", content: CASSIE_PROMPT + "\n\n" + FORMAT_RULES },
     { role: "system", content: profileSummary(profile) },
-    { role: "system", content: situation + "\n\n" + FORMAT_RULES },
+    { role: "system", content: situation },
     ...history.map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "").slice(0, 1500) })),
   ];
   if (body.start) messages.push({ role: "user", content: body.parent ? "(A grown-up opens the app.)" : history.length ? "(William opens the app again.)" : "(William opens the app and looks at you.)" });

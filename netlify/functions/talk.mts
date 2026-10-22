@@ -8,8 +8,9 @@ import { thinkStream, speakerTag, OpenAIError } from "../lib/brain.mts";
 export default async (req: Request, ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
   const key = openaiKey(); if (!key) return json({ error: "no-key" }, 500);
-  if (await overBudget()) return json({ error: "budget" }, 402);
   const body: any = await req.json().catch(() => ({}));
+  if (body.warm) return json({ ok: true });   // the phone pokes this while William talks, so the function is awake when his words arrive
+  if (await overBudget()) return json({ error: "budget" }, 402);
   const messages = (Array.isArray(body.messages) ? body.messages : []).slice(-30);
   if (typeof body.text === "string") {
     const content = speakerTag(body) + (body.text.trim() || "(William said something but it was too quiet or unclear to hear.)");
