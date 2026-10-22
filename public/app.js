@@ -98,11 +98,14 @@ async function micGraph(){
   return micAn;
 }
 const micBuf=new Float32Array(1024);
+// how loud the room is when nobody is talking; follows quiet moments quickly and loud ones hardly at all, and carries over between turns
+let ambient=0.004;
+function trackAmbient(rms,thr){ if(rms<ambient) ambient=ambient*0.7+rms*0.3; else if(rms<thr) ambient=Math.min(0.015,ambient*0.98+rms*0.02); }
 function micLevel(){ if(!micAn) return 0; micAn.getFloatTimeDomainData(micBuf); let s=0; for(let i=0;i<micBuf.length;i++) s+=micBuf[i]*micBuf[i]; return Math.sqrt(s/micBuf.length); }
 
 // ---------- live ears: William's voice streams to OpenAI while he talks, so the words are ready the moment he stops ----------
 const Ears={
-  ws:null, connecting:false, fails:0, timeouts:0, open:false, sending:false, queue:[], preroll:[], text:'', waiters:[], item:null, expires:0,
+  ws:null, connecting:false, fails:0, timeouts:0, open:false, sending:false, queue:[], preroll:[], text:'', waiters:[], item:null, committed:null, expires:0,
   enabled(){ return S.liveEars&&this.fails<2; },
   async connect(){
     if(!this.enabled()||!pcmNode) return false;
@@ -137,9 +140,13 @@ const Ears={
   },
   close(){ if(this.ws){ try{ this.ws.close(); }catch(e){} } this.ws=null; this.open=false; this.queue=[]; },
   onEvent(m){
-    if(m.type==='conversation.item.input_audio_transcription.delta'){ if(this.item&&m.item_id&&m.item_id!==this.item) return; this.item=m.item_id||this.item; this.text+=m.delta||''; }
-    else if(m.type==='conversation.item.input_audio_transcription.completed'){ this.resolve((m.transcript||'').trim()); }
-    else if(m.type==='error'){ console.warn('ears error',m.error); if(m.error&&/session|unauthor|token|expired/i.test(m.error.message||'')) this.close(); }
+    // only the item created by THIS turn's commit counts; a late result from an earlier turn is ignored (it used to be mistaken for the new answer)
+    if(m.type==='input_audio_buffer.committed'){ this.committed=m.item_id||null; }
+    else if(m.type==='conversation.item.input_audio_transcription.delta'){ if(this.item&&m.item_id&&m.item_id!==this.item) return; this.item=m.item_id||this.item; this.text+=m.delta||''; }
+    else if(m.type==='conversation.item.input_audio_transcription.completed'){ if(this.committed&&m.item_id&&m.item_id!==this.committed) return; this.resolve((m.transcript||'').trim()); }
+    else if(m.type==='error'){ console.warn('ears error',m.error); const msg=(m.error&&m.error.message)||'';
+      if(/buffer.*(empty|too small)|commit_empty/i.test(msg)||(m.error&&/commit_empty|buffer_too_small/.test(m.error.code||''))) this.resolve('');   // nothing was said: don't wait for the timeout
+      if(/session|unauthor|token|expired/i.test(msg)) this.close(); }
   },
   // audio from the worklet: keep a little of the past (so an interruption doesn't lose his first word), send while listening
   feed(buf){
@@ -150,10 +157,10 @@ const Ears={
   send(buf){
     let bin=''; const bytes=new Uint8Array(buf); for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));
     const msg=JSON.stringify({type:'input_audio_buffer.append',audio:btoa(bin)});
-    if(this.ws&&this.open) this.ws.send(msg); else if(this.connecting&&this.queue.length<300) this.queue.push(msg);
+    if(this.ws&&this.open){ if(this.ws.bufferedAmount<512000) this.ws.send(msg); } else if(this.connecting&&this.queue.length<120) this.queue.push(msg);   // ~12 s can queue while the socket opens
   },
   start(withPreroll){
-    this.text=''; this.item=null; this.resolve(null); this.waiters=[];
+    this.sending=false; this.text=''; this.item=null; this.committed=null; this.resolve(null); this.waiters=[];
     if(!this.enabled()||!pcmNode) return false;
     this.connect();
     if(this.ws&&this.open) try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.clear'})); }catch(e){}
@@ -165,9 +172,9 @@ const Ears={
     this.sending=false;
     if(!this.ws||!this.open) return Promise.resolve(null);
     try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.commit'})); }catch(e){ return Promise.resolve(null); }
-    return new Promise(res=>{ this.waiters.push(v=>{ this.timeouts=0; res(v); }); setTimeout(()=>{ if(this.waiters.length){ this.waiters=[]; if(++this.timeouts>=2){ this.fails=9; this.close(); } res(null); } },ms); });
+    return new Promise(res=>{ const done=v=>{ this.timeouts=0; res(v); }; this.waiters.push(done); setTimeout(()=>{ const i=this.waiters.indexOf(done); if(i>=0){ this.waiters.splice(i,1); if(++this.timeouts>=2){ this.fails=9; this.close(); } res(null); } },ms); });   // a timeout only gives up on its own wait
   },
-  cancel(){ this.sending=false; this.resolve(null); if(this.ws&&this.open) try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.clear'})); }catch(e){} },
+  cancel(){ this.sending=false; this.resolve(null); this.text=''; this.item=null; this.committed=null; if(this.ws&&this.open) try{ this.ws.send(JSON.stringify({type:'input_audio_buffer.clear'})); }catch(e){} },
   resolve(v){ const w=this.waiters; this.waiters=[]; for(const r of w) r(v); },
 };
 
@@ -195,20 +202,21 @@ async function startListening(auto,opts={}){
   setState('listening'); markActive(true);
   if(!auto) say('',true);
   // voice detection: stop after a short pause, or give up if he says nothing
-  let noise=0.01, n=0, lastLoud=opts.interrupted?0:-1, soft=0, lastT=0;   // soft: ms of gentle sound (a quiet voice), so silence is never sent for transcription
+  let lastLoud=opts.interrupted?0:-1, soft=0, lastT=0, loudRun=0;   // soft: ms of gentle sound (a quiet voice), so silence is never sent for transcription
   const tick=()=>{
     if(!rec||rec.state!=='recording') return;
     const rms=micLevel(), t=performance.now()-started;
-    if(t<300&&!opts.interrupted){ noise=(noise*n+rms)/(++n); }
-    else{
-      const thr=Math.max(0.012,noise*3);   // a little more sensitive to a quiet five-year-old
-      if(rms>thr){ recInfo.heard=true; lastLoud=t; }
-      else if(rms>Math.max(0.006,noise*1.8)){ soft+=t-lastT; if(soft>400) recInfo.maybe=true; }
-      lastT=t;
+    const thr=Math.max(0.010,ambient*3);   // his voice must stand out from the room, however quiet the room is
+    trackAmbient(rms,thr);
+    if(t>=150||opts.interrupted){   // the first 150 ms can still hold the tail of her own voice
+      const dt=Math.max(0,Math.min(100,t-lastT));
+      if(rms>thr){ if(++loudRun>=3||recInfo.heard){ recInfo.heard=true; lastLoud=t; } soft=0; }   // ~50 ms of sound, so a click doesn't count
+      else{ loudRun=0; if(rms>Math.max(0.005,ambient*1.8)){ soft+=dt; if(soft>400) recInfo.maybe=true; } else soft=0; }
       if(recInfo.heard&&t-lastLoud>S.pause) return stopListening();
       if(!recInfo.heard&&t>12000){ recInfo.quiet=true; return stopListening(); }   // the meter heard nothing: still check the live ears before giving up
       if(t>20000) return stopListening();
     }
+    lastT=t;
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -280,7 +288,7 @@ function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return n
 // did the ears really hear words (not the odd 'Thank you.' transcription invents out of silence)?
 function realWords(t){ if(!t) return false; const w=t.replace(/[^a-z' ]/gi,' ').replace(/\s+/g,' ').trim(); if(w.length<2) return false; return !/^(thank you|thanks|thank you for watching|thanks for watching|you|bye|bye bye|the end|hmm+|mm+|um+|uh+|oh|ah|yeah|so|okay|ok|subtitles by.*|amara org)$/i.test(w); }
 async function onRecorded(){
-  const info=recInfo, chunks=recChunks; rec=null;
+  const info=recInfo, chunks=recChunks.slice(); rec=null; if(!info) return; if(recInfo===info) recInfo=null;
   if(info.cancelled||info.token!==playToken){ Ears.cancel(); if(info.token!==playToken) return; markActive(false); setState('idle'); return; }   // something else (a topic button) has taken over
   let heard=null;
   if(!info.heard){
