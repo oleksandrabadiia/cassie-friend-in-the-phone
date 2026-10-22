@@ -249,13 +249,23 @@ function checkParent(heard){
   else if(PARENT_ON.test(heard)){ setParent(true,whoFrom(heard)); }
 }
 // ---------- instant reactions: tiny clips in Cassie's own voice, made once and kept on the phone ----------
-const FILLERS=['Hmm…','Ooh!','Ooh, okay!','Let me think…','Oh yeah!','Nice!','Wow!','Gotcha!','Aha!','Ha!','Ooh, good one!','Right…','Hmm, let me see…','Oh! Okay, okay…','Brilliant!'];
+const FILLERS=['Hmm…','Let me think…','Oh yeah!','Gotcha!','Aha!','Ha!','Right…','Hmm, let me see…'];
 const CALLOUTS=['William? Where did you go?','Hello-o! I’m getting a bit bored. Shall we play a game?','Psst, William! Tap the big button when you want to talk to me!'];
 const calloutBufs={};
-async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t,'wink')}); }catch(e){} } }
+async function loadCallouts(){ const v=S.voice; if(calloutBufs[v]) return; calloutBufs[v]=[]; for(const t of CALLOUTS){ try{ calloutBufs[v].push({t,b:await fetchAudio(t,'wink',true)}); }catch(e){} } }
+// little clips (fillers, call-outs, "I'm still here") are kept on the phone, so they are only ever bought once per voice
+const clipDB={
+  db:null,
+  open(){ if(this.db!==null) return this.db; this.db=new Promise(res=>{ try{ const r=indexedDB.open('cassie-clips',1); r.onupgradeneeded=()=>r.result.createObjectStore('clips'); r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); r.onblocked=()=>res(null); }catch(e){ res(null); } }); return this.db; },
+  async get(k){ const d=await this.open(); if(!d) return null; return new Promise(res=>{ try{ const q=d.transaction('clips').objectStore('clips').get(k); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }catch(e){ res(null); } }); },
+  async put(k,v){ const d=await this.open(); if(!d) return; try{ d.transaction('clips','readwrite').objectStore('clips').put(v,k); }catch(e){} },
+};
 const CLIPS={nudge:'I’m still here! Have a little think, then tell me.',tap:'Tap the big purple button when you want to talk to me!',sleep:'That’s all our Cassie time for today. Let’s play again tomorrow!',oops:'Oops, my ears went wonky! Tap the button and say it again.',grownup:'Uh-oh, I need a grown-up to check my settings.'};
 const clipBufs={};
-async function loadClips(){ const v=S.voice; if(clipBufs[v]) return; clipBufs[v]={}; for(const k in CLIPS){ try{ clipBufs[v][k]=await fetchAudio(CLIPS[k],'gentle'); }catch(e){} } }
+async function loadClips(){ const v=S.voice; if(clipBufs[v]) return; clipBufs[v]={}; for(const k in CLIPS){ try{ clipBufs[v][k]=await fetchAudio(CLIPS[k],'gentle',true); }catch(e){} } }
+// clips are fetched after the first reply, one at a time, so they never compete with Cassie's own voice for the network
+let clipsLoading=null;
+function loadAllClips(){ if(clipsLoading) return clipsLoading; return clipsLoading=loadClips().then(loadFillers).then(loadCallouts).catch(()=>{}).finally(()=>{ clipsLoading=null; }); }
 async function playClip(k){ const b=(clipBufs[S.voice]||{})[k]; if(!b||!ac) return false; await playBuffer(b,'gentle'); face().speaking(false); return true; }
 let errorStreak=0;
 function showError(e){ say(friendlyError(e),true); markActive(false); setState('idle');
@@ -265,12 +275,15 @@ function showError(e){ say(friendlyError(e),true); markActive(false); setState('
     // a passing internet wobble shouldn't end the chat: listen again (twice at most in a row)
     if(!cfg&&S.handsFree&&started&&tok===playToken&&++errorStreak<=2&&minutesLeft()>0) startListening(true); }); }
 const fillerBufs={};  // voice -> [AudioBuffer]
-async function fetchAudio(text,mood){
+async function fetchAudio(text,mood,keep){
+  const key=S.voice+'|'+(mood||'front')+'|'+text;
+  if(keep){ const b=await clipDB.get(key); if(b){ try{ return await new Promise((res,rej)=>audioCtx().decodeAudioData(b.slice(0),res,rej)); }catch(e){} } }
   let lastErr=null;
   for(let go=0;go<2;go++){   // one retry, so a single hiccup doesn't swallow a sentence
     try{
       const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice,mood:mood||'front'})});
       const bytes=await r.arrayBuffer(); const ctx=audioCtx();
+      if(keep) clipDB.put(key,bytes.slice(0));
       return await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
     }catch(e){ lastErr=e; if(['wrong-code','no-key','bad-key','budget','no-google-key','bad-google-key'].includes(e.code)) break; await new Promise(r=>setTimeout(r,300)); }
   }
@@ -280,7 +293,7 @@ async function loadFillers(){
   const v=S.voice; if(fillerBufs[v]) return;
   fillerBufs[v]=[];
   const list=FILLERS.slice().sort(()=>Math.random()-.5);
-  for(let i=0;i<list.length;i+=3){ await Promise.all(list.slice(i,i+3).map(async t=>{ try{ fillerBufs[v].push(await fetchAudio(t,'think')); }catch(e){} })); }
+  for(const t of list){ try{ fillerBufs[v].push(await fetchAudio(t,'think',true)); }catch(e){} }
 }
 let lastFiller=null;
 function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return null; let b; do{ b=l[Math.floor(Math.random()*l.length)]; }while(l.length>1&&b===lastFiller); lastFiller=b; return b; }
@@ -322,14 +335,13 @@ async function onRecorded(){
       const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
       fd.append('meta',JSON.stringify({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:nextActivity()}));
       const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
-      const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
+      const filler=randomFiller(); if(filler) playBuffer(filler,null,{keepThinking:true});   // a quick 'Hmm…' while the slow path runs; not waited for
       const {heard:h,say:text,mood}=await turnP;
       Tm.mark('turnUpload');
       if(token!==playToken) return;
       checkParent(h);
       remember({role:'user',content:tag()+(h||'(William said something but it was too quiet or unclear to hear.)')});
       remember({role:'assistant',content:text});
-      await fillerDone;
       await speakReply(text,mood,token);
     }
   }catch(e){ console.error(e); if(token!==playToken) return; showError(e); }
@@ -343,9 +355,7 @@ async function cassieReplies(isStart,topic){
   const token=++playToken;
   if(topic){ remember({role:'user',content:'(William tapped the '+topic+' button.)'}); activity=topic; activityTurns=0; }
   if(isStart) activity=null;
-  const p=talkStream({start:isStart,topic,resume:isStart&&resumed},token);
-  loadClips().then(loadFillers).then(loadCallouts);
-  await p;
+  await talkStream({start:isStart,topic,resume:isStart&&resumed},token);
 }
 // Cassie's words arrive bit by bit; each finished sentence is voiced and played while the next is still being written
 async function talkStream(req,token){
@@ -388,30 +398,33 @@ async function talkStream(req,token){
 // the chosen game stays "on" for about 10 of William's answers, unless he picks something else
 function nextActivity(){ if(!activity) return null; if(++activityTurns>10){ activity=null; return null; } return activity; }
 function afterReply(){
-  errorStreak=0;
+  errorStreak=0; setTimeout(loadAllClips,1500);
   if(minutesLeft()<=0) return goToSleep();
   if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
 }
 // plays sentences in order, fetching the voice for the next one while the current one plays
 class Speaker{
-  constructor(token){ this.token=token; this.q=[]; this.playing=null; this.started=false; this.mood='front'; this.ended=false; this.first=true; this.fillerP=null; }
-  filler(buf){ if(this.started) return; Tm.mark('filler'); this.fillerP=playBuffer(buf,null,{keepThinking:true}); }
-  push(text){ const item={text,audio:fetchAudio(text,this.mood)}; this.q.push(item); this.pump(); }
+  constructor(token){ this.token=token; this.q=[]; this.playing=null; this.started=false; this.mood='front'; this.ended=false; this.first=true; this.fillerP=null; this.fillerSrc=null; this.fillerStop=null; }
+  filler(buf){ if(this.started||this.fillerP) return; Tm.mark('filler'); this.fillerP=playBuffer(buf,null,{keepThinking:true}); this.fillerSrc=currentSource; this.fillerStop=currentStop; }
+  push(text){ const item={text,audio:fetchAudio(text,this.mood)}; this.q.push(item); this.pump(); }   // the voice for every sentence is fetched as soon as it is written
   async pump(){
     if(this.playing||!this.q.length) return;
     const item=this.q[0]; this.playing=item;
     try{
       const buf=await item.audio; if(this.first) Tm.mark('firstAudio');
-      if(this.fillerP){ await this.fillerP; this.fillerP=null; }
+      if(this.fillerP){   // her real words are ready: give the "Hmm…" up to 300 ms to finish, then cut it
+        await Promise.race([this.fillerP,new Promise(r=>setTimeout(r,300))]);
+        if(this.fillerSrc&&currentSource===this.fillerSrc){ try{ this.fillerSrc.onended=null; this.fillerSrc.stop(); }catch(e){} if(this.fillerStop) this.fillerStop(); }
+        this.fillerP=null; this.fillerSrc=null; this.fillerStop=null;
+      }
       if(this.token!==playToken) return;
       this.started=true; if(this.first) Tm.mark('firstWord');
       await playBuffer(buf,this.first?this.mood:null); this.first=false;
     }catch(e){ console.warn('voice failed',e); }
-    this.q.shift(); this.playing=null;
-    if(this.q.length) this.pump(); else if(this.ended&&this.done) this.done();
+    finally{ this.q.shift(); this.playing=null; if(this.token===playToken&&this.q.length) this.pump(); else if(this.ended&&this.done){ const d=this.done; this.done=null; d(); } }
   }
   end(){ this.ended=true; if(!this.playing&&!this.q.length) return Promise.resolve(); return new Promise(res=>{ this.done=res; if(!this.playing) this.pump(); }); }
-  stop(){ this.q=[]; this.ended=true; }
+  stop(){ this.q=[]; this.ended=true; if(this.done){ const d=this.done; this.done=null; d(); } }
 }
 async function speakReply(text,mood,token){
   const sp=new Speaker(token); sp.mood=mood;
@@ -599,7 +612,7 @@ function renderVoices(){
   VOICES.forEach(([id,name,desc])=>{
     const row=document.createElement('div'); row.className='vrow'+(S.voice===id?' on':'');
     row.innerHTML=`<button class="play" type="button" aria-label="Hear ${name}">&#9654;</button><button class="pick" type="button" role="radio" aria-checked="${S.voice===id}"><b>${name}</b><span>${desc}</span></button><span class="tick">${S.voice===id?'Chosen':''}</span>`;
-    row.querySelector('.pick').addEventListener('click',()=>{ S.voice=id; store.set('voice',id); renderVoices(); if(started) loadFillers(); });
+    row.querySelector('.pick').addEventListener('click',()=>{ S.voice=id; store.set('voice',id); renderVoices(); if(started) loadAllClips(); });
     const pb=row.querySelector('.play');
     pb.addEventListener('click',async ()=>{
       audioCtx(); if(sampleSrc){ try{ sampleSrc.stop(); }catch(e){} sampleSrc=null; }
