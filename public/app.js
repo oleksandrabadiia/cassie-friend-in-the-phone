@@ -444,6 +444,7 @@ async function speakReply(text,mood,token){
   while(rest){ const m=rest.match(/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/); if(!m){ parts.push(rest); break; } parts.push(m[1]); rest=rest.slice(m[0].length); }
   parts.forEach(p=>sp.push(p));
   await sp.end();
+  Tm.mark('replyDone'); Tm.end();
   if(token!==playToken) return;
   face().speaking(false);
   afterReply();
