@@ -1,6 +1,6 @@
 // Cassie's voice: turns her words into soft, warm speech.
 import type { Config, Context } from "@netlify/functions";
-import { checkCode, json, openaiKey, addUsage, overBudget } from "../lib/common.mts";
+import { checkCode, json, openaiKey, addUsage, overBudget, later } from "../lib/common.mts";
 
 const GOOGLE_VOICES = new Set(["en-GB-Chirp3-HD-Aoede", "en-GB-Chirp3-HD-Kore", "en-GB-Chirp3-HD-Leda", "en-GB-Chirp3-HD-Zephyr", "en-GB-Chirp3-HD-Sulafat", "en-GB-Chirp3-HD-Achernar"]);
 const VOICES = new Set(["coral", "shimmer", "sage", "nova", "fable", "alloy", "ballad", "verse", "marin", "cedar"]);
@@ -17,7 +17,7 @@ const STYLES: Record<string, string> = {
   excited: BASE + "Super excited, fast and bouncy, cheering him on.",
 };
 
-export default async (req: Request, _ctx: Context) => {
+export default async (req: Request, ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
   const key = openaiKey(); if (!key) return json({ error: "no-key" }, 500);
   if (await overBudget()) return json({ error: "budget" }, 402);
@@ -43,7 +43,7 @@ export default async (req: Request, _ctx: Context) => {
     }
     const d: any = await r.json();
     const bytes = Uint8Array.from(atob(d.audioContent || ""), (c) => c.charCodeAt(0));
-    await addUsage(0, text.length / 15); // inside Google's free monthly allowance
+    await later(ctx, addUsage(0, text.length / 15)); // inside Google's free monthly allowance
     return new Response(bytes, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
   }
 
@@ -59,7 +59,7 @@ export default async (req: Request, _ctx: Context) => {
     });
     if (r.ok) {
       const minutes = text.length / 900;
-      await addUsage(a.model === "tts-1" ? text.length * 15 / 1e6 : 0.015 * minutes, minutes * 60);
+      await later(ctx, addUsage(a.model === "tts-1" ? text.length * 15 / 1e6 : 0.015 * minutes, minutes * 60));
       return new Response(r.body, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
     }
     const err = await r.text(); console.log("speak failed", a.model, r.status, err.slice(0, 300));

@@ -39,7 +39,7 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
   - `lib/brain.mts` — transcribe + think, topic-button prompts (`TOPICS`), learning-profile updates.
   - `lib/common.mts` — family-code check, spend tracking (Netlify Blobs store `cassie`), William's profile
     (`practised`, `tricky`, `likes`, `memories`).
-- **Models**: hearing `gpt-4o-mini-transcribe` (live over realtime, or file upload) → `whisper-1`; brain `gpt-4o-mini` →
+- **Models**: hearing `gpt-4o-transcribe` (live over realtime via `CASSIE_LIVE_MODEL`, or file upload via `CASSIE_HEAR_MODEL`) → `gpt-4o-mini-transcribe` → `whisper-1` (full model hears young children much better, ~$0.006/min); brain `gpt-4o-mini` →
   `gpt-4.1-mini` → `gpt-5-mini` (override with env `CASSIE_MODEL`), streamed; voice `gpt-4o-mini-tts` → `tts-1`.
 - **Reply format** (`lib/prompt.mts` `FORMAT_RULES`): line 1 `@mood`, then the spoken words, then `###{json bookkeeping}`.
   `thinkStream` in `brain.mts` parses it as it streams (also tolerates the old all-JSON style).
@@ -62,7 +62,7 @@ sleepy at 90 s.
 - `GOOGLE_TTS_KEY` — optional, enables the free Google voices.
 - `CASSIE_FAMILY_CODE` — `pebble-moon-35` (checked ignoring case/spaces/dashes). Typed once per device.
 - `CASSIE_MONTHLY_LIMIT_USD` — soft cap, default 8. The hard cap is the OpenAI monthly budget.
-- `CASSIE_MODEL` — optional brain override.
+- `CASSIE_MODEL` — optional brain override. `CASSIE_LIVE_MODEL` / `CASSIE_HEAR_MODEL` — optional hearing overrides.
 Changing an env var needs a redeploy (push an empty commit, or Netlify → Deploys → Trigger deploy).
 
 ## Parent settings (in the app)
@@ -105,3 +105,7 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
   grown-up button to the right of the talk button (`#pmode`, glows when on) toggles it by hand. Tags: "(Mummy speaking)".
 - Phonics prompt now lists William's school sound mat (Phase 2 + 3 sounds and tricky words; Phase 5 is for later).
 
+- 22 Oct speed pass: `/api/talk` sends `{end:true,say}` the instant her spoken words are complete (before the `###` bookkeeping
+  JSON is written), and all spend/profile saving runs after the response via `ctx.waitUntil` (`later()` in common.mts);
+  `overBudget()` is cached 60 s. Phone: first sentence can be short (8+ chars) so she starts sooner; end-of-speech pause
+  raised 0.5 → 0.8 s so William isn't cut off mid-sentence; hearing upgraded to `gpt-4o-transcribe` with a child-speech hint.

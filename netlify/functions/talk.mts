@@ -2,10 +2,10 @@
 // Body: { text?: string (what William said), start?: boolean, topic?: string, messages, minutesLeft, heardSeconds? }
 // Response: newline-separated JSON: {"mood":"…"} first, then {"t":"words…"} … then {"done":true,"say":"…","mood":"…"} (or {"error":"…"}).
 import type { Config, Context } from "@netlify/functions";
-import { addUsage, checkCode, json, openaiKey, overBudget } from "../lib/common.mts";
+import { addUsage, checkCode, json, openaiKey, overBudget, later } from "../lib/common.mts";
 import { thinkStream, speakerTag, OpenAIError } from "../lib/brain.mts";
 
-export default async (req: Request, _ctx: Context) => {
+export default async (req: Request, ctx: Context) => {
   const bad = checkCode(req); if (bad) return bad;
   const key = openaiKey(); if (!key) return json({ error: "no-key" }, 500);
   if (await overBudget()) return json({ error: "budget" }, 402);
@@ -22,9 +22,12 @@ export default async (req: Request, _ctx: Context) => {
     async start(ctrl) {
       const send = (o: unknown) => ctrl.enqueue(enc.encode(JSON.stringify(o) + "\n"));
       try {
-        if (heardSeconds > 0) await addUsage(0.003 * heardSeconds / 60);   // live hearing is billed per minute of audio
-        const out = await thinkStream(key, { ...body, messages }, t => send({ t }), m => send({ mood: m }));
+        const jobs: Promise<unknown>[] = [];
+        if (heardSeconds > 0) jobs.push(addUsage(0.006 * heardSeconds / 60));   // live hearing is billed per minute of audio
+        // {end} goes out the moment her spoken words are complete, so the phone can voice the last sentence straight away
+        const out = await thinkStream(key, { ...body, messages }, t => send({ t }), m => send({ mood: m }), say => send({ end: true, say }), j => jobs.push(j));
         send({ done: true, ...out });
+        await later(ctx, Promise.all(jobs));
       } catch (e: any) { send({ error: e instanceof OpenAIError ? e.code : "chat-failed" }); }
       ctrl.close();
     },

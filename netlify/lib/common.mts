@@ -30,7 +30,14 @@ export async function getUsage() {
   return { month, day };
 }
 
-export async function addUsage(usd: number, speechSeconds = 0) {
+// one at a time, so two updates in the same moment don't overwrite each other
+let usageChain: Promise<unknown> = Promise.resolve();
+export function addUsage(usd: number, speechSeconds = 0): Promise<void> {
+  const next = usageChain.then(() => addUsageNow(usd, speechSeconds));
+  usageChain = next.catch(() => {});
+  return next;
+}
+async function addUsageNow(usd: number, speechSeconds: number) {
   const s = store();
   const { month, day } = await getUsage();
   month.usd += usd; month.turns += 1;
@@ -44,9 +51,19 @@ export function monthlyLimitUsd(): number {
   return isFinite(v) ? v : 8;
 }
 
+// remembered for a minute on a warm server, so most turns skip two storage reads
+let budgetCache: { at: number; over: boolean } | null = null;
 export async function overBudget(): Promise<boolean> {
+  if (budgetCache && Date.now() - budgetCache.at < 60000) return budgetCache.over;
   const { month } = await getUsage();
-  return month.usd >= monthlyLimitUsd();
+  budgetCache = { at: Date.now(), over: month.usd >= monthlyLimitUsd() };
+  return budgetCache.over;
+}
+// run bookkeeping after the reply has gone out (falls back to waiting if the platform can't)
+export function later(ctx: any, p: Promise<unknown>): Promise<unknown> {
+  const safe = p.catch(e => console.log("bookkeeping failed", e));
+  if (ctx && typeof ctx.waitUntil === "function") { ctx.waitUntil(safe); return Promise.resolve(); }
+  return safe;
 }
 
 // ---------- William's learning profile ----------

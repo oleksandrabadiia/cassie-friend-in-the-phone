@@ -2,7 +2,7 @@
 import { addUsage, getProfile, saveProfile, profileSummary } from "./common.mts";
 import { CASSIE_PROMPT, FORMAT_RULES } from "./prompt.mts";
 
-const HINT = "A five-year-old British boy called William talking to Cassie, his friend in the phone. Sometimes his mum Ara or dad James: 'Cassie, it's Mummy here', 'Daddy speaking', 'it's Ara', 'back to William'. Luka, Loly and Pop, dinosaurs, Spider-Man, phonics sounds like sss, mmm, ch, sh, th.";
+const HINT = "A five-year-old British boy, William, chatting to Cassie, his friend in the phone. Young child's speech: short, sometimes unclear or mispronounced, with ums and restarts. Write exactly what he says in British English. Names he uses: Cassie, Mummy, Daddy, Luka, Loly and Pop (guinea pigs), Harry Potter, Hogwarts. He may say single phonics sounds like sss, mmm, ch, sh, th, or words like dinosaur, LEGO, swimming. Sometimes a grown-up: 'it's Mummy here', 'Daddy speaking', 'back to William'.";
 // "(Mummy speaking) " etc. — William is assumed unless a grown-up says who they are or taps the grown-up button
 export function speakerTag(b: any): string {
   if (!b?.parent) return "";
@@ -13,12 +13,12 @@ export class OpenAIError extends Error { constructor(public code: string, public
 
 export async function transcribe(key: string, audio: File, seconds: number): Promise<string> {
   if (!audio || audio.size < 800) return "";
-  for (const model of ["gpt-4o-mini-transcribe", "whisper-1"]) {
+  for (const model of [Netlify.env.get("CASSIE_HEAR_MODEL") || "gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"]) {
     const fd = new FormData();
     fd.append("file", audio, audio.name || "speech.m4a");
     fd.append("model", model); fd.append("language", "en"); fd.append("prompt", HINT);
     const r = await fetch("https://api.openai.com/v1/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${key}` }, body: fd });
-    if (r.ok) { const d: any = await r.json(); await addUsage((model === "whisper-1" ? 0.006 : 0.003) * seconds / 60); return (d.text || "").trim(); }
+    if (r.ok) { const d: any = await r.json(); await addUsage((model.includes("mini") ? 0.003 : 0.006) * seconds / 60); return (d.text || "").trim(); }
     const err = await r.text(); console.log("transcribe failed", model, r.status, err.slice(0, 300));
     if (r.status === 401) throw new OpenAIError("bad-key", 500);
     if (r.status === 429) throw new OpenAIError("openai-limit", 429);
@@ -60,7 +60,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
 }
 
 // Streams Cassie's words as they are written (onText gets each new bit), then returns the whole reply + mood.
-export async function thinkStream(key: string, body: any, onText: (t: string) => void, onMood: (m: string) => void = () => {}): Promise<{ say: string; mood: string }> {
+export async function thinkStream(key: string, body: any, onText: (t: string) => void, onMood: (m: string) => void = () => {}, onEnd: (say: string) => void = () => {}, defer?: (p: Promise<unknown>) => void): Promise<{ say: string; mood: string }> {
   const history = Array.isArray(body.messages) ? body.messages.slice(-30) : [];
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
   const profile = await getProfile();
@@ -99,7 +99,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
       continue;
     }
     // read the SSE stream; everything before "###" is spoken, the JSON after it is bookkeeping
-    let full = "", sent = 0, usage: any = null, pending = "", headMood = "", head = 0;
+    let full = "", sent = 0, usage: any = null, pending = "", headMood = "", head = 0, ended = false;
     const reader = r.body.getReader(), dec = new TextDecoder();
     const flush = () => {
       if (!head) { // the first line may be "@mood"
@@ -115,6 +115,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
         const m = speakable.match(/\n?#{0,2}$/); if (m && m[0]) speakable = speakable.slice(0, -m[0].length);
       }
       if (speakable.length > sent) { onText(speakable.slice(sent)); sent = speakable.length; }
+      if (cut >= 0 && !ended) { ended = true; onEnd(speakable.replace(/[*_#`]/g, "").trim()); }
     };
     while (true) {
       const { value, done } = await reader.read(); if (done) break;
@@ -127,7 +128,8 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
       }
     }
     const p = PRICE[model] || [0.4, 1.6];
-    await addUsage(((usage?.prompt_tokens || 0) * p[0] + (usage?.completion_tokens || 0) * p[1]) / 1e6);
+    const run = (j: Promise<unknown>) => defer ? defer(j) : j;
+    await run(addUsage(((usage?.prompt_tokens || 0) * p[0] + (usage?.completion_tokens || 0) * p[1]) / 1e6));
     flush();
     full = full.slice(Math.max(0, head));
     const cut = full.indexOf("###");
@@ -137,8 +139,8 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
     const say = (cut >= 0 ? full.slice(0, cut) : full).replace(/[*_#`]/g, "").trim() || "Ooh, say that again for me?";
     if (sent < say.length) onText(say.slice(sent));
     const mood = MOODS.has(headMood) ? headMood : MOODS.has(out.mood) ? out.mood : "front";
-    // remember learning progress
-    try {
+    // remember learning progress (after the reply has gone out when possible)
+    const keep = async () => { try {
       const norm = (a: any) => (Array.isArray(a) ? a : []).map((x: any) => String(x).toLowerCase().trim()).filter((x: string) => x && x.length < 40).slice(0, 6);
       const pr = norm(out.practised), tr = norm(out.tricky), lk = norm(out.likes);
       const mem = (Array.isArray(out.remember) ? out.remember : []).map((x: any) => String(x).trim()).filter((x: string) => x && x.length < 160).slice(0, 2);
@@ -154,7 +156,8 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
         profile.likes = profile.likes.slice(-30);
         await saveProfile(profile);
       }
-    } catch (e) { console.log("profile save failed", e); }
+    } catch (e) { console.log("profile save failed", e); } };
+    await run(keep());
     return { say, mood };
   }
   throw new OpenAIError("chat-failed", 502);
@@ -162,7 +165,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
 
 // Live ears: a short-lived key so the phone can stream William's voice straight to OpenAI while he talks.
 export async function liveEarsToken(key: string): Promise<{ token: string; api: "ga" | "beta"; model: string; expires: number }> {
-  const model = Netlify.env.get("CASSIE_LIVE_MODEL") || "gpt-4o-mini-transcribe";
+  const model = Netlify.env.get("CASSIE_LIVE_MODEL") || "gpt-4o-transcribe";   // the full model hears young children much better than the mini one
   const H = { Authorization: `Bearer ${key}`, "content-type": "application/json" };
   // current API
   let r = await fetch("https://api.openai.com/v1/realtime/client_secrets", { method: "POST", headers: H, body: JSON.stringify({

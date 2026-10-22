@@ -15,7 +15,7 @@ const S={
   voice:store.get('voice','marin'),
   liveEars:store.get('liveEars',true),
   bargeIn:store.get('bargeIn',true),
-  pause:store.get('pause',500),
+  pause:store.get('pause',800),   // how long a quiet gap means he's finished (young children pause mid-sentence)
 };
 const today=()=>new Date().toLocaleDateString('en-CA');
 function usage(){ const u=store.get('usage',{}); return u.date===today()?u:{date:today(),seconds:0,bonus:0}; }
@@ -310,10 +310,13 @@ async function talkStream(req,token){
   const sp=new Speaker(token); let pending='', text='', spoken=0, final=null;
   // a quick "Hmm…" if her first words take a moment
   let fillerTimer=setTimeout(()=>{ if(!sp.started&&token===playToken){ const f=randomFiller(); if(f) sp.filler(f); } },350);
-  const cut=()=>{ // hand over every complete sentence
-    const m=text.slice(spoken).match(/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/);
+  let ended=false;
+  const cut=()=>{ // hand over every complete sentence (the first one can be short, so she starts sooner)
+    const re=spoken?/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/:/^([\s\S]{8,}?[.!?…]+["”’)]?)(\s+)(?=\S)/;
+    const m=text.slice(spoken).match(re);
     if(m){ spoken+=m[1].length+m[2].length; sp.push(m[1]); say(text); cut(); }
   };
+  const finishText=full=>{ if(ended) return; ended=true; if(full&&full.length>=text.length) text=full; const rest=text.slice(spoken).trim(); if(rest){ sp.push(rest); spoken=text.length; } };
   while(true){
     const {value,done}=await reader.read(); if(done) break;
     if(token!==playToken){ reader.cancel(); sp.stop(); return; }
@@ -323,11 +326,12 @@ async function talkStream(req,token){
       if(j.mood){ sp.mood=j.mood; if(j.mood!=='front') face().mood(j.mood); }
       if(j.t){ text+=j.t; cut(); }
       if(j.error){ const err=new Error(j.error); err.code=j.error; clearTimeout(fillerTimer); sp.stop(); throw err; }
+      if(j.end) finishText(j.say||text);   // her words are complete: voice the last bit now, don't wait for the bookkeeping
       if(j.done) final=j; }
   }
   clearTimeout(fillerTimer);
   const full=(final&&final.say)||text;
-  if(full.slice(spoken).trim()) sp.push(full.slice(spoken).trim());
+  if(!ended){ ended=true; if(full.slice(spoken).trim()) sp.push(full.slice(spoken).trim()); }
   say(full); scrollCaption(Math.max(3,(full.length-spoken)/14)); remember({role:'assistant',content:full});
   await sp.end();
   if(token!==playToken) return;   // (before: if her voice failed to load she stayed stuck on "thinking")
