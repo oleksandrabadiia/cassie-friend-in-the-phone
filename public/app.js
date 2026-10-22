@@ -335,10 +335,12 @@ async function onRecorded(){
       const fd=new FormData(); fd.append('audio',blob,'speech.'+ext); fd.append('seconds',String(seconds.toFixed(1)));
       fd.append('meta',JSON.stringify({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:nextActivity()}));
       const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
-      const filler=randomFiller(); if(filler) playBuffer(filler,null,{keepThinking:true});   // a quick 'Hmm…' while the slow path runs; not waited for
+      const filler=randomFiller(); let fsrc=null, fstop=null;
+      if(filler){ playBuffer(filler,null,{keepThinking:true}); fsrc=currentSource; fstop=currentStop; }   // a quick 'Hmm…' while the slow path runs
       const {heard:h,say:text,mood}=await turnP;
       Tm.mark('turnUpload');
       if(token!==playToken) return;
+      if(fsrc&&currentSource===fsrc){ try{ fsrc.onended=null; fsrc.stop(); }catch(e){} if(fstop) fstop(); }   // the answer is here: stop the filler rather than wait for it
       checkParent(h);
       remember({role:'user',content:tag()+(h||'(William said something but it was too quiet or unclear to hear.)')});
       remember({role:'assistant',content:text});
