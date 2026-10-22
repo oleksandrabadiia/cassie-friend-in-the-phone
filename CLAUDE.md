@@ -17,7 +17,7 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
     (`mode`, `mood`, `speaking`, `level`, `giggle`, `jump`, `rollEyes`). No eyelids/blinking (Ara removed them).
   - `app.js` — conversation loop, daily time limit, parent settings, voice list, idle behaviour. Key parts: `Ears`
     (live hearing WebSocket, with preroll buffer and automatic fallback after 2 failures), `startListening` (MediaRecorder
-    as backup + VAD, pause `S.pause` = 0.5 s), `talkStream` + `Speaker` (sentence-by-sentence voicing of the streamed
+    as backup + VAD with a continuously tracked `ambient` floor, pause `S.pause` = 0.8 s), `talkStream` + `Speaker` (sentence-by-sentence voicing of the streamed
     reply, "Hmm…" filler only if the first sentence takes >350 ms), barge-in interval (William talking over Cassie
     interrupts her; adaptive threshold so her own voice in the mic doesn't trigger it).
   - `pcm-worklet.js` — AudioWorklet that turns the mic into 24 kHz 16-bit 100 ms chunks for live hearing.
@@ -51,7 +51,7 @@ Ara is not a developer. Explain things for a total beginner, step by step, and n
 3. Fun/superheroes last, as a treat — superheroes are deliberately de-emphasised.
 4. Follow his lead; listen more than talk; short replies; one question at a time.
 
-Speed matters to William: live hearing while he talks, 0.5 s end-of-speech pause, streamed reply voiced sentence by
+Speed matters to William: live hearing while he talks, 0.8 s end-of-speech pause, streamed reply voiced sentence by
 sentence, a pre-made "Hmm…"/"Ooh!" clip only if the first sentence is slow, and he can talk over her to interrupt.
 Parent toggles: "Live hearing" and "William can talk over Cassie" (both on by default). Idle: silly jump/eye-roll at 25 s, a spoken call-out at 50 s (max twice/session),
 sleepy at 90 s.
@@ -117,3 +117,25 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
   "Daddy's here" don't count, and the brain is told never to switch on its own. `whenIsIt()` in brain.mts spells out
   "Thursday evening, 7:33 pm, a school day, tomorrow Friday…" (+ swimming on Sundays). Superheroes filtered out of saved
   likes (`HERO` in common.mts) and the prompt rule made absolute. Activity continuation tells her old notes ≠ game over.
+- 22 Oct conversation-engine pass (branch `conversation-engine`, reviewed before merge):
+  - Timings: `Tm` in app.js records each step of a turn (transcript, talkSent, firstToken, firstSentence, firstAudio,
+    firstWord, textEnd, done, replyDone, ms from end of speech) → console `[timing]`, `window.cassieTimings`, and the
+    previous turn is sent as `timings` with the next `/api/talk` so it shows in Netlify's function log as `phone timing`.
+    Server logs `talk timing {firstToken,textEnd,done,model}` and `speak timing {firstByte|total,chars}`.
+  - Listening: `ambient` floor tracked all the time (the old 300 ms calibration absorbed William's voice if he answered
+    at once → "not heard"); sound must last ~50 ms; `Ears` matches the transcript to this turn's `input_audio_buffer.committed`
+    item (a late result from an earlier turn used to be taken as the new answer); timeout drops only its own waiter;
+    `commit_empty` error resolves to "" straight away; WebSocket backlog guard.
+  - Speaker: never blocks on the "Hmm…" filler (300 ms grace, then it is cut); `finally` keeps the queue moving and resolves
+    `end()` on cancel/stop; upload-fallback path cuts the filler instead of overlapping it.
+  - Clips/fillers/call-outs cached in IndexedDB (`cassie-clips`) per voice+mood+text, fetched one at a time 1.5 s after
+    the first reply, never during it; 8 fillers instead of 15.
+  - `warmServer()` pokes `/api/talk` and `/api/speak` with `{warm:true}` (returns at once) when listening starts, at most
+    every 25 s, so a cold function isn't on the reply path.
+  - Prompt order: `CASSIE_PROMPT + FORMAT_RULES` first on their own (stable → OpenAI prompt cache), then profile, then
+    situation; the keep-the-game-going instruction is a final system message after the history.
+  - Games: `activity`/`activityTurns` saved with the chat (`cassie.history`), counted once per reply in `afterReply`.
+  - iPhone: `audioReady()` resumes an `interrupted`/suspended AudioContext before every clip (else clips "play" silently);
+    mic track `onended` → re-ask next time; coming back within 90 s resumes hands-free listening; wake lock re-requested safely.
+  - Test harness (not in repo): mock server + Playwright with a fake mic file and a fake realtime WebSocket covers greeting,
+    live turn, topic tile, late transcript → fallback, stale-result guard, clip cache on second open.
