@@ -231,9 +231,9 @@ function stopListening(){ if(rec&&rec.state==='recording'){ Tm.begin('turn'); re
 const saved=store.get('history',null);
 const history=(saved&&Array.isArray(saved.m)&&Date.now()-(saved.at||0)<6*3600e3)?saved.m.slice(-40):[];
 const resumed=history.length>0;
-function remember(m){ history.push(m); store.set('history',{at:Date.now(),m:history.slice(-40)}); }
-// the game William picked with a topic button, so Cassie keeps it going over several turns
-let activity=null, activityTurns=0;
+// the game William picked with a topic button, so Cassie keeps it going over several turns (kept with the chat, so reopening the app doesn't forget it)
+let activity=resumed&&saved.activity?saved.activity:null, activityTurns=resumed?(saved.activityTurns||0):0;
+function remember(m){ history.push(m); store.set('history',{at:Date.now(),m:history.slice(-40),activity,activityTurns}); }
 // a grown-up announcing themselves ("it's Mummy here", "Daddy speaking", "it's Ara") switches Cassie to Parent Mode
 let parentMode=false, speaker=null;   // speaker: 'Mummy' | 'Daddy' | null (a grown-up, not sure which)
 const tag=()=>parentMode?'('+(speaker||'A grown-up')+' speaking) ':'';
@@ -403,9 +403,10 @@ async function talkStream(req,token){
   afterReply();
 }
 // the chosen game stays "on" for about 10 of William's answers, unless he picks something else
-function nextActivity(){ if(!activity) return null; if(++activityTurns>10){ activity=null; return null; } return activity; }
+function nextActivity(){ return activity&&activityTurns<10?activity:null; }
 function afterReply(){
   errorStreak=0; setTimeout(loadAllClips,1500);
+  if(activity&&++activityTurns>=10) activity=null;   // one game lasts about ten of her replies unless he picks something else
   if(minutesLeft()<=0) return goToSleep();
   if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
 }
