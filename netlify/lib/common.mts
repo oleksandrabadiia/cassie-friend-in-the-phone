@@ -83,13 +83,15 @@ export async function resetProfile() {
   await store().setJSON("profile", emptyProfile());
 }
 
+const HERO = /spider|batman|superman|super ?hero|marvel|avenger|hulk|iron man|captain america|thor\b|ironman/i;
 export function profileSummary(p: Profile): string {
   const top = (o: Record<string, number>) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k]) => k);
   const parts: string[] = [];
   const pr = top(p.practised), tr = top(p.tricky);
   if (pr.length) parts.push("Sounds/skills William has practised successfully: " + pr.join(", ") + ".");
   if (tr.length) parts.push("Sounds/skills he finds tricky (practise gently, without pressure): " + tr.join(", ") + ".");
-  if (p.likes.length) parts.push("Things he has enjoyed: " + p.likes.slice(-10).join(", ") + ".");
+  const likes = p.likes.filter(l => !HERO.test(l));   // superheroes are never Cassie's suggestion, so don't feed them back to her
+  if (likes.length) parts.push("Things he has enjoyed: " + likes.slice(-10).join(", ") + ".");
   if (p.memories?.length) parts.push("Notes from earlier chats, dated (newest last). Don't repeat these games, jokes, facts or ideas; build on them instead:\n- " + p.memories.slice(-45).join("\n- "));
   return parts.length ? "SAVED LEARNING PROFILE\n" + parts.join("\n") : "SAVED LEARNING PROFILE\nNothing saved yet.";
 }

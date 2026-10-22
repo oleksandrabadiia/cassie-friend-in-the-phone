@@ -177,7 +177,8 @@ async function startListening(auto,opts={}){
   const stream=micStream, mime=pickMime();
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
-  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
+  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,quiet:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
+  keepAwake();
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
   rec.onstop=()=>onRecorded();
   rec.start(250);
@@ -191,10 +192,10 @@ async function startListening(auto,opts={}){
     const rms=micLevel(), t=performance.now()-started;
     if(t<300&&!opts.interrupted){ noise=(noise*n+rms)/(++n); }
     else{
-      const thr=Math.max(0.018,noise*3);
+      const thr=Math.max(0.012,noise*3);   // a little more sensitive to a quiet five-year-old
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
       if(recInfo.heard&&t-lastLoud>S.pause) return stopListening();
-      if(!recInfo.heard&&t>(auto?12000:12000)){ recInfo.cancelled=true; return stopListening(); }
+      if(!recInfo.heard&&t>12000){ recInfo.quiet=true; return stopListening(); }   // the meter heard nothing: still check the live ears before giving up
       if(t>20000) return stopListening();
     }
     requestAnimationFrame(tick);
@@ -218,7 +219,10 @@ function setParent(on,who){
   const b=$('pmode'); if(b){ b.dataset.on=on?'true':'false'; b.setAttribute('aria-pressed',on?'true':'false'); }
   if(was&&!on&&started) remember({role:'user',content:'(William is talking to Cassie again now.)'});
 }
-const PARENT_ON=/^(?:(?:hi|hello|hey|cassie|okay|ok|um|so|right)[,!.\s]*){0,4}(?:it'?s\s+|this is\s+)?(?:william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b[^.?!]{0,8}\b(here|hear|speaking|talking|calling)\b|\b(it'?s|this is|hi,? it'?s|hello,? it'?s)\s+(william'?s\s+)?(mummy|mommy|mum|mom|daddy|dad|ara|james)\b|\bparent mode\b|\bwilliam'?s (mum|mom|dad)\b/i;
+// Only an explicit announcement switches to Parent Mode: "I'm Mummy", "it's Mummy here", "Mummy speaking", "this is William's mum here".
+// NOT "it's Mummy's birthday", "Daddy's here" (he walked in), "William's dad is tall" — those are William talking about his parents.
+const GROWN=String.raw`(?:mummy|mommy|mum|mom|daddy|dad|ara|james)`;
+const PARENT_ON=new RegExp(String.raw`\b(?:i'?m|i am)\s+(?:william'?s\s+)?${GROWN}\b(?!'s)|\b(?:it'?s|this is)\s+(?:william'?s\s+)?${GROWN}\b(?!'s)[^.?!]{0,6}\b(?:here|speaking|talking)\b|\b${GROWN}\s+(?:speaking|here now)\b|\bparent mode\b`,'i');
 const PARENT_OFF=/back to william|william'?s (here|back|turn)|william is (here|back)|over to william/i;
 function checkParent(heard){
   if(!heard) return;
@@ -234,14 +238,24 @@ const CLIPS={nudge:'I’m still here! Have a little think, then tell me.',tap:'T
 const clipBufs={};
 async function loadClips(){ const v=S.voice; if(clipBufs[v]) return; clipBufs[v]={}; for(const k in CLIPS){ try{ clipBufs[v][k]=await fetchAudio(CLIPS[k],'gentle'); }catch(e){} } }
 async function playClip(k){ const b=(clipBufs[S.voice]||{})[k]; if(!b||!ac) return false; await playBuffer(b,'gentle'); face().speaking(false); return true; }
+let errorStreak=0;
 function showError(e){ say(friendlyError(e),true); markActive(false); setState('idle');
   const cfg=['wrong-code','no-key','bad-key','budget','no-google-key','bad-google-key'].includes(e&&e.code);
-  playClip(cfg?'grownup':'oops').then(()=>{ if(state==='speaking') setState('idle'); markActive(false); }); }
+  const tok=playToken;
+  playClip(cfg?'grownup':'oops').then(()=>{ if(state==='speaking') setState('idle'); markActive(false);
+    // a passing internet wobble shouldn't end the chat: listen again (twice at most in a row)
+    if(!cfg&&S.handsFree&&started&&tok===playToken&&++errorStreak<=2&&minutesLeft()>0) startListening(true); }); }
 const fillerBufs={};  // voice -> [AudioBuffer]
 async function fetchAudio(text,mood){
-  const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice,mood:mood||'front'})});
-  const bytes=await r.arrayBuffer(); const ctx=audioCtx();
-  return await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
+  let lastErr=null;
+  for(let go=0;go<2;go++){   // one retry, so a single hiccup doesn't swallow a sentence
+    try{
+      const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text,voice:S.voice,mood:mood||'front'})});
+      const bytes=await r.arrayBuffer(); const ctx=audioCtx();
+      return await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
+    }catch(e){ lastErr=e; if(['wrong-code','no-key','bad-key','budget','no-google-key','bad-google-key'].includes(e.code)) break; await new Promise(r=>setTimeout(r,300)); }
+  }
+  throw lastErr;
 }
 async function loadFillers(){
   const v=S.voice; if(fillerBufs[v]) return;
@@ -252,21 +266,30 @@ async function loadFillers(){
 let lastFiller=null;
 function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return null; let b; do{ b=l[Math.floor(Math.random()*l.length)]; }while(l.length>1&&b===lastFiller); lastFiller=b; return b; }
 
+// did the ears really hear words (not the odd 'Thank you.' transcription invents out of silence)?
+function realWords(t){ if(!t) return false; const w=t.replace(/[^a-z' ]/gi,' ').trim(); if(w.length<2) return false; return !/^(thank you|thanks|thank you for watching|you|bye|the end|\.)$/i.test(w); }
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
-  if(info.cancelled||!info.heard){ Ears.cancel(); if(info.token!==playToken) return;   // something else (a topic button) has taken over
-    if(info.cancelled&&info.heard) { markActive(false); setState('idle'); return; }
-    // he didn't say anything: say so out loud (no more silent stops), give him one more go, then rest
-    const tok=playToken;
-    if(info.auto&&!info.nudged&&minutesLeft()>0){ await playClip('nudge'); if(tok!==playToken) return; return startListening(true,{nudged:true}); }
-    await playClip('tap'); if(tok!==playToken) return;
-    markActive(false); setState('idle'); return; }
+  if(info.cancelled||info.token!==playToken){ Ears.cancel(); if(info.token!==playToken) return; markActive(false); setState('idle'); return; }   // something else (a topic button) has taken over
+  let heard=null;
+  if(!info.heard){
+    // the level meter heard nothing, but he may have spoken softly: ask the live ears before deciding
+    if(info.live){ setState('thinking'); heard=await Ears.finish(2500); if(info.token!==playToken) return; }
+    else Ears.cancel();
+    if(!realWords(heard)){
+      heard=null;
+      // he didn't say anything: say so out loud (no more silent stops), give him one more go, then rest
+      const tok=playToken;
+      if(info.auto&&!info.nudged&&minutesLeft()>0){ await playClip('nudge'); if(tok!==playToken) return; return startListening(true,{nudged:true}); }
+      await playClip('tap'); if(tok!==playToken) return;
+      markActive(false); setState('idle'); return; }
+  }
   setState('thinking');
   const seconds=(performance.now()-info.started)/1000;
   const token=++playToken;
   try{
     // 1) the words, hopefully already waiting from live hearing
-    let heard=info.live?await Ears.finish(2500):null;
+    if(heard===null&&info.live) heard=await Ears.finish(2500);
     if(token!==playToken) return;
     if(heard!==null){
       checkParent(heard);
@@ -341,6 +364,7 @@ async function talkStream(req,token){
 // the chosen game stays "on" for about 10 of William's answers, unless he picks something else
 function nextActivity(){ if(!activity) return null; if(++activityTurns>10){ activity=null; return null; } return activity; }
 function afterReply(){
+  errorStreak=0;
   if(minutesLeft()<=0) return goToSleep();
   if(S.handsFree){ startListening(true); } else { markActive(false); setState('idle'); }
 }
@@ -557,7 +581,7 @@ function renderVoices(){
       audioCtx(); if(sampleSrc){ try{ sampleSrc.stop(); }catch(e){} sampleSrc=null; }
       pb.classList.add('busy');
       try{
-        const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:`Hello William! It's me, Cassie, your friend in the phone. This is my ${name} voice. Ooh, I've got an idea! Spider-Man needs our help today. He's lost his web somewhere in the city, and we need to find it. Can you think of something that begins with the sound sss? Take your time, I'm listening.`,voice:id})});
+        const r=await api('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:`Hello William! It's me, Cassie, your friend in the phone. This is my ${name} voice. I've got an idea! Loly and Pop the guinea pigs are hungry, and Pop will only eat things that begin with the sound sss. Can you think of something? Take your time, I'm listening.`,voice:id})});
         const bytes=await r.arrayBuffer(); const ctx=audioCtx();
         const audio=await new Promise((res,rej)=>ctx.decodeAudioData(bytes,res,rej));
         const src=ctx.createBufferSource(); src.buffer=audio; src.connect(ctx.destination); sampleSrc=src; src.start();
@@ -576,7 +600,7 @@ $('changeCode').addEventListener('click',()=>{ $('parent').hidden=true; openSetu
 // keep the screen awake while she's chatting
 let wake=null; async function keepAwake(){ try{ if('wakeLock' in navigator&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>wake=null); } }catch(e){} }
 talkBtn.addEventListener('click',keepAwake);
-document.addEventListener('visibilitychange',()=>{ if(document.hidden){ stopListening(); Ears.cancel(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) keepAwake(); if(document.hidden){ stopListening(); Ears.cancel(); interrupt(); markActive(false); if(state!=='sleeping') setState('idle'); } });
 
 // no pinch or double-tap zoom in Safari
 document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});

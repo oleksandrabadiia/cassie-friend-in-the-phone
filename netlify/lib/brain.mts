@@ -41,7 +41,7 @@ const TOPICS: Record<string, string> = {
   cars: "William just tapped the CARS button. Talk cars, racing cars, diggers, trains or monster trucks: a tiny race story or a 'what sound does it make' game.",
   story: "William just tapped the STORY button. Begin a short, silly made-up story and stop after two or three sentences to ask William what happens next. Use characters from your notes if you have any.",
   heroes: "William just tapped the SUPERHEROES button. Start a short superhero mission with Spider-Man, Batman, Superman or a hero he invents, and weave a little counting or a phonics sound into it.",
-  surprise: "William just tapped the SURPRISE button. Pick something unexpected from his interests that you haven't done recently, preferably a learning game dressed up as fun, and jump straight in.",
+  surprise: "William just tapped the SURPRISE button. Pick something unexpected from his interests (never superheroes) that you haven't done recently, preferably a learning game dressed up as fun, and jump straight in.",
 };
 const ACTIVITY_NAMES: Record<string, string> = { maths: "maths game", phonics: "phonics mission", world: "world facts chat", animals: "animal game", quiz: "quiz", draw: "drawing activity", space: "space adventure", dinos: "dinosaur game", cars: "cars game", story: "story you are making up together", heroes: "superhero mission", surprise: "game" };
 // What's coming up, so Cassie can talk about Halloween, birthdays and Christmas at the right time.
@@ -55,6 +55,19 @@ function upcoming(): string {
   return "Coming up: " + soon.map(([n, d]) => `${n} in ${d === 0 ? "0 days (TODAY!)" : d + " days"}`).join("; ") + ". Mention these naturally now and then, not every reply.";
 }
 
+// "Thursday evening, 22 October, 7:33 pm (a school day)" — spelled out so Cassie never has to work it out from numbers.
+function whenIsIt(): string {
+  const uk = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/London" }));
+  const h = uk.getHours(), wd = uk.getDay();
+  const part = h < 5 ? "the middle of the night" : h < 12 ? "morning" : h < 17 ? "afternoon" : h < 19 ? "early evening" : h < 21 ? "evening" : "late evening";
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const school = (d: number) => d >= 1 && d <= 5;
+  const clock = uk.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
+  const date = uk.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+  const tmrw = days[(wd + 1) % 7];
+  return `RIGHT NOW it is ${days[wd]} ${part}, ${date}, ${clock} UK time. Today is ${school(wd) ? "a school day" : "the weekend"}; tomorrow is ${tmrw}, ${school((wd + 1) % 7) ? "a school day" : "not a school day"}${wd === 0 && h < 12 ? "; his swimming lesson is this morning at 11:30" : wd === 0 && h >= 12 ? "; he had swimming this morning" : wd === 6 ? "; swimming is tomorrow at 11:30" : ""}. (School holidays may differ; if he says there's no school, believe him.) Use this: say good morning / good evening properly, know whether school happened today, and after 7:30pm steer gently towards bed.`;
+}
+
 export async function think(key: string, body: any): Promise<{ say: string; mood: string }> {
   return thinkStream(key, body, () => {});
 }
@@ -65,15 +78,14 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
   const profile = await getProfile();
 
-  const now = new Date().toLocaleString("en-GB", { timeZone: "Europe/London", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
   const situation = [
-    `It is ${now} (UK time).`,
+    whenIsIt(),
     upcoming(),
     body.start && body.resume && history.length ? "William has come back to the app after a little break. The conversation above is from earlier today. Welcome him back warmly in a fresh way and offer to carry on with what you were doing (say what it was), or do something new. One question only." : "",
     body.start && !(body.resume && history.length) ? (body.parent ? "A grown-up has just opened the app in Parent Mode. Greet them warmly and briefly." : "William has just opened the app. Greet him warmly and ask how he is or what he has been doing today. One question only.") : "",
-    !body.topic && body.activity && ACTIVITY_NAMES[body.activity] && !body.parent ? `You are in the middle of the ${ACTIVITY_NAMES[body.activity]} William picked a moment ago (see the conversation). KEEP IT GOING: react to what he just said, then give the next question, clue, step or part of the story, one at a time. Don't wrap it up after one go. Only stop if he says he wants to do something else, changes the subject, or seems bored; then follow him.` : "",
+    !body.topic && body.activity && ACTIVITY_NAMES[body.activity] && !body.parent ? `You are in the middle of the ${ACTIVITY_NAMES[body.activity]} William picked a moment ago (see the conversation). KEEP IT GOING: react to what he just said, then give the next question, clue, step or part of the story, one at a time. Don't wrap it up after one go, and don't drift back to 'how was your day' chat. Your dated notes are from EARLIER days: a note saying you played this game before does not mean this game is over. Only stop if he says he wants to do something else, changes the subject, or seems bored; then follow him.` : "",
     body.topic ? TOPICS[body.topic] || "" : "",
-    body.parent ? `PARENT MODE IS ON: ${body.speaker === "Mummy" ? "William's mum Ara" : body.speaker === "Daddy" ? "William's dad James" : "a grown-up (William's mum Ara or dad James; you don't know which yet, so don't guess — if it matters, ask)"} is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Mummy speaking), (Daddy speaking) or (A grown-up speaking) are theirs.` : "WHO IS TALKING: assume it is William unless a message is marked as a grown-up or someone says it's Mummy or Daddy. Other voices in the room (grown-ups chatting nearby) may get mixed in; if a message makes no sense coming from William, gently ask him what he meant rather than answering the grown-up chatter.",
+    body.parent ? `PARENT MODE IS ON: ${body.speaker === "Mummy" ? "William's mum Ara" : body.speaker === "Daddy" ? "William's dad James" : "a grown-up (William's mum Ara or dad James; you don't know which yet, so don't guess — if it matters, ask)"} is speaking to you now, not William. Talk to them as an adult, warmly, following the PARENT MODE rules. Messages marked (Mummy speaking), (Daddy speaking) or (A grown-up speaking) are theirs.` : "WHO IS TALKING: William. Only the phone can switch to a grown-up, and it marks those messages (Mummy speaking) etc. There is no such mark now, so it is William even if the words mention Mummy or Daddy ('it's Mummy's birthday', 'Daddy's here' just means Daddy came in). Never switch to talking to a grown-up on your own. Other voices in the room may get mixed in; if a message makes no sense coming from William, gently ask him what he meant.",
     minutesLeft <= 2 ? `Only about ${Math.max(0, Math.round(minutesLeft))} minute(s) of Cassie time are left today. Start wrapping up kindly: suggest a break, playing, drawing or time with family, and say goodbye warmly.` : "",
   ].filter(Boolean).join(" ");
 
