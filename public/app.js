@@ -177,7 +177,7 @@ async function startListening(auto,opts={}){
   const stream=micStream, mime=pickMime();
   try{ rec=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(e){ rec=new MediaRecorder(stream); }
   recChunks=[]; const started=performance.now();
-  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,quiet:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
+  recInfo={mime:rec.mimeType||mime||'audio/mp4',heard:!!opts.interrupted,started,cancelled:false,quiet:false,maybe:false,live:false,token:playToken,auto:!!auto,nudged:!!opts.nudged};
   keepAwake();
   rec.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
   rec.onstop=()=>onRecorded();
@@ -186,7 +186,7 @@ async function startListening(auto,opts={}){
   setState('listening'); markActive(true);
   if(!auto) say('',true);
   // voice detection: stop after a short pause, or give up if he says nothing
-  let noise=0.01, n=0, lastLoud=opts.interrupted?0:-1;
+  let noise=0.01, n=0, lastLoud=opts.interrupted?0:-1, soft=0, lastT=0;   // soft: ms of gentle sound (a quiet voice), so silence is never sent for transcription
   const tick=()=>{
     if(!rec||rec.state!=='recording') return;
     const rms=micLevel(), t=performance.now()-started;
@@ -194,6 +194,8 @@ async function startListening(auto,opts={}){
     else{
       const thr=Math.max(0.012,noise*3);   // a little more sensitive to a quiet five-year-old
       if(rms>thr){ recInfo.heard=true; lastLoud=t; }
+      else if(rms>Math.max(0.006,noise*1.8)){ soft+=t-lastT; if(soft>400) recInfo.maybe=true; }
+      lastT=t;
       if(recInfo.heard&&t-lastLoud>S.pause) return stopListening();
       if(!recInfo.heard&&t>12000){ recInfo.quiet=true; return stopListening(); }   // the meter heard nothing: still check the live ears before giving up
       if(t>20000) return stopListening();
@@ -267,14 +269,14 @@ let lastFiller=null;
 function randomFiller(){ const l=fillerBufs[S.voice]; if(!l||!l.length) return null; let b; do{ b=l[Math.floor(Math.random()*l.length)]; }while(l.length>1&&b===lastFiller); lastFiller=b; return b; }
 
 // did the ears really hear words (not the odd 'Thank you.' transcription invents out of silence)?
-function realWords(t){ if(!t) return false; const w=t.replace(/[^a-z' ]/gi,' ').trim(); if(w.length<2) return false; return !/^(thank you|thanks|thank you for watching|you|bye|the end|\.)$/i.test(w); }
+function realWords(t){ if(!t) return false; const w=t.replace(/[^a-z' ]/gi,' ').replace(/\s+/g,' ').trim(); if(w.length<2) return false; return !/^(thank you|thanks|thank you for watching|thanks for watching|you|bye|bye bye|the end|hmm+|mm+|um+|uh+|oh|ah|yeah|so|okay|ok|subtitles by.*|amara org)$/i.test(w); }
 async function onRecorded(){
   const info=recInfo, chunks=recChunks; rec=null;
   if(info.cancelled||info.token!==playToken){ Ears.cancel(); if(info.token!==playToken) return; markActive(false); setState('idle'); return; }   // something else (a topic button) has taken over
   let heard=null;
   if(!info.heard){
     // the level meter heard nothing, but he may have spoken softly: ask the live ears before deciding
-    if(info.live){ setState('thinking'); heard=await Ears.finish(2500); if(info.token!==playToken) return; }
+    if(info.live&&info.maybe){ setState('thinking'); heard=await Ears.finish(2500); if(info.token!==playToken) return; }   // only if the mic saw some gentle sound; pure silence is never transcribed (it invents words)
     else Ears.cancel();
     if(!realWords(heard)){
       heard=null;

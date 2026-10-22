@@ -109,8 +109,9 @@ previews, month spend estimate, William's practised/tricky/likes + memories, cle
   JSON is written), and all spend/profile saving runs after the response via `ctx.waitUntil` (`later()` in common.mts);
   `overBudget()` is cached 60 s. Phone: first sentence can be short (8+ chars) so she starts sooner; end-of-speech pause
   raised 0.5 → 0.8 s so William isn't cut off mid-sentence; hearing upgraded to `gpt-4o-transcribe` with a child-speech hint.
-- 22 Oct (evening): quiet answers are no longer thrown away — if the level meter hears nothing in 12 s the phone still asks
-  the live ears for words (`realWords()` filters silence hallucinations) before nudging; meter floor 0.018 → 0.012; wake lock
+- 22 Oct (evening): quiet answers are no longer thrown away — if the level meter hears nothing in 12 s but saw >0.4 s of gentle sound (`recInfo.maybe`)
+  the phone asks the live ears for words (`realWords()` filters silence hallucinations) before nudging — pure silence is NEVER
+  transcribed (v30 did, and she answered invented words, talking to herself); meter floor 0.018 → 0.012; wake lock
   re-requested on every listen and when the app comes back; `fetchAudio` retries once; after an "oops" she listens again (max 2 in a row).
   Parent Mode is ONLY explicit now ("I'm Mummy", "it's Mummy here", "Mummy speaking", grown-up button) — possessives and
   "Daddy's here" don't count, and the brain is told never to switch on its own. `whenIsIt()` in brain.mts spells out
