@@ -73,7 +73,7 @@ export async function think(key: string, body: any): Promise<{ say: string; mood
 }
 
 // Streams Cassie's words as they are written (onText gets each new bit), then returns the whole reply + mood.
-export async function thinkStream(key: string, body: any, onText: (t: string) => void, onMood: (m: string) => void = () => {}, onEnd: (say: string) => void = () => {}, defer?: (p: Promise<unknown>) => void): Promise<{ say: string; mood: string }> {
+export async function thinkStream(key: string, body: any, onText: (t: string) => void, onMood: (m: string) => void = () => {}, onEnd: (say: string) => void = () => {}, defer?: (p: Promise<unknown>) => void, onModel: (m: string) => void = () => {}): Promise<{ say: string; mood: string }> {
   const history = Array.isArray(body.messages) ? body.messages.slice(-30) : [];
   const minutesLeft = typeof body.minutesLeft === "number" ? body.minutesLeft : 20;
   const profile = await getProfile();
@@ -104,6 +104,7 @@ export async function thinkStream(key: string, body: any, onText: (t: string) =>
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(payload),
     });
+    onModel(model);
     if (!r.ok || !r.body) {
       const err = await r.text(); console.log("chat failed", model, r.status, err.slice(0, 300));
       if (r.status === 401) throw new OpenAIError("bad-key", 500);

@@ -23,10 +23,14 @@ export default async (req: Request, ctx: Context) => {
       const send = (o: unknown) => ctrl.enqueue(enc.encode(JSON.stringify(o) + "\n"));
       try {
         const jobs: Promise<unknown>[] = [];
+        if (body.timings) console.log("phone timing", JSON.stringify(body.timings));   // the previous turn as the phone saw it
+        const t0 = Date.now(), srv: Record<string, number | string> = {};
         if (heardSeconds > 0) jobs.push(addUsage(0.006 * heardSeconds / 60));   // live hearing is billed per minute of audio
         // {end} goes out the moment her spoken words are complete, so the phone can voice the last sentence straight away
-        const out = await thinkStream(key, { ...body, messages }, t => send({ t }), m => send({ mood: m }), say => send({ end: true, say }), j => jobs.push(j));
-        send({ done: true, ...out });
+        const out = await thinkStream(key, { ...body, messages }, t => { if (srv.firstToken == null) srv.firstToken = Date.now() - t0; send({ t }); }, m => { if (srv.firstToken == null) srv.firstToken = Date.now() - t0; send({ mood: m }); }, say => { srv.textEnd = Date.now() - t0; send({ end: true, say }); }, j => jobs.push(j), m => { srv.model = m; });
+        srv.done = Date.now() - t0;
+        console.log("talk timing", JSON.stringify(srv));
+        send({ done: true, ...out, srv });
         await later(ctx, Promise.all(jobs));
       } catch (e: any) { send({ error: e instanceof OpenAIError ? e.code : "chat-failed" }); }
       ctrl.close();

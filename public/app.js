@@ -41,6 +41,15 @@ function say(text,small){ if(text) console.log('[Cassie]',text); }
 let capScroll=null;
 function scrollCaption(){}
 
+// ---------- timings: how long each step of a turn takes (console + window.cassieTimings; the last one is sent to the server so it shows in Netlify's function logs) ----------
+const Tm={cur:null,log:[],last:null,
+  begin(kind){ this.cur={kind,at:new Date().toISOString(),t0:performance.now(),m:{}}; },
+  mark(k){ if(this.cur&&this.cur.m[k]==null) this.cur.m[k]=Math.round(performance.now()-this.cur.t0); },
+  set(k,v){ if(this.cur) this.cur.m[k]=v; },
+  end(){ if(!this.cur) return; const r=this.cur; this.cur=null; this.last={kind:r.kind,...r.m}; this.log.push(this.last); this.log=this.log.slice(-30); window.cassieTimings=this.log; console.log('[timing]',r.kind,JSON.stringify(r.m)); },
+  take(){ const l=this.last; this.last=null; return l; }
+};
+
 // ---------- server calls ----------
 async function api(path,opts={}){
   const headers=Object.assign({'x-cassie-code':S.code},opts.headers||{});
@@ -204,7 +213,7 @@ async function startListening(auto,opts={}){
   };
   requestAnimationFrame(tick);
 }
-function stopListening(){ if(rec&&rec.state==='recording') rec.stop(); }
+function stopListening(){ if(rec&&rec.state==='recording'){ Tm.begin('turn'); rec.stop(); } }
 
 const saved=store.get('history',null);
 const history=(saved&&Array.isArray(saved.m)&&Date.now()-(saved.at||0)<6*3600e3)?saved.m.slice(-40):[];
@@ -276,7 +285,7 @@ async function onRecorded(){
   let heard=null;
   if(!info.heard){
     // the level meter heard nothing, but he may have spoken softly: ask the live ears before deciding
-    if(info.live&&info.maybe){ setState('thinking'); heard=await Ears.finish(2500); if(info.token!==playToken) return; }   // only if the mic saw some gentle sound; pure silence is never transcribed (it invents words)
+    if(info.live&&info.maybe){ setState('thinking'); heard=await Ears.finish(2500); Tm.mark('transcript'); if(info.token!==playToken) return; }   // only if the mic saw some gentle sound; pure silence is never transcribed (it invents words)
     else Ears.cancel();
     if(!realWords(heard)){
       heard=null;
@@ -292,6 +301,7 @@ async function onRecorded(){
   try{
     // 1) the words, hopefully already waiting from live hearing
     if(heard===null&&info.live) heard=await Ears.finish(2500);
+    Tm.mark('transcript'); Tm.set('live',heard!==null);
     if(token!==playToken) return;
     if(heard!==null){
       checkParent(heard);
@@ -306,6 +316,7 @@ async function onRecorded(){
       const turnP=api('/api/turn',{method:'POST',body:fd}).then(r=>r.json());
       const filler=randomFiller(); const fillerDone=filler?playBuffer(filler,null,{keepThinking:true}):Promise.resolve();
       const {heard:h,say:text,mood}=await turnP;
+      Tm.mark('turnUpload');
       if(token!==playToken) return;
       checkParent(h);
       remember({role:'user',content:tag()+(h||'(William said something but it was too quiet or unclear to hear.)')});
@@ -319,6 +330,7 @@ async function onRecorded(){
 // ---------- Cassie replies ----------
 let currentSource=null, playToken=0;
 async function cassieReplies(isStart,topic){
+  Tm.begin(isStart?'start':'topic');
   setState('thinking');
   const token=++playToken;
   if(topic){ remember({role:'user',content:'(William tapped the '+topic+' button.)'}); activity=topic; activityTurns=0; }
@@ -329,7 +341,8 @@ async function cassieReplies(isStart,topic){
 }
 // Cassie's words arrive bit by bit; each finished sentence is voiced and played while the next is still being written
 async function talkStream(req,token){
-  const body=Object.assign({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:req.topic?null:nextActivity()},req);
+  const body=Object.assign({messages:history.slice(-30),minutesLeft:minutesLeft(),parent:parentMode,speaker,activity:req.topic?null:nextActivity(),timings:Tm.take()},req);
+  Tm.mark('talkSent');
   const r=await api('/api/talk',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   const reader=r.body.getReader(), dec=new TextDecoder();
   const sp=new Speaker(token); let pending='', text='', spoken=0, final=null;
@@ -339,7 +352,7 @@ async function talkStream(req,token){
   const cut=()=>{ // hand over every complete sentence (the first one can be short, so she starts sooner)
     const re=spoken?/^([\s\S]{28,}?[.!?…]+["”’)]?)(\s+)(?=\S)/:/^([\s\S]{8,}?[.!?…]+["”’)]?)(\s+)(?=\S)/;
     const m=text.slice(spoken).match(re);
-    if(m){ spoken+=m[1].length+m[2].length; sp.push(m[1]); say(text); cut(); }
+    if(m){ spoken+=m[1].length+m[2].length; Tm.mark('firstSentence'); sp.push(m[1]); say(text); cut(); }
   };
   const finishText=full=>{ if(ended) return; ended=true; if(full&&full.length>=text.length) text=full; const rest=text.slice(spoken).trim(); if(rest){ sp.push(rest); spoken=text.length; } };
   while(true){
@@ -348,17 +361,18 @@ async function talkStream(req,token){
     pending+=dec.decode(value,{stream:true});
     const lines=pending.split('\n'); pending=lines.pop()||'';
     for(const l of lines){ if(!l.trim()) continue; let j; try{ j=JSON.parse(l); }catch(e){ continue; }
-      if(j.mood){ sp.mood=j.mood; if(j.mood!=='front') face().mood(j.mood); }
-      if(j.t){ text+=j.t; cut(); }
+      if(j.mood){ Tm.mark('firstToken'); sp.mood=j.mood; if(j.mood!=='front') face().mood(j.mood); }
+      if(j.t){ Tm.mark('firstToken'); text+=j.t; cut(); }
       if(j.error){ const err=new Error(j.error); err.code=j.error; clearTimeout(fillerTimer); sp.stop(); throw err; }
-      if(j.end) finishText(j.say||text);   // her words are complete: voice the last bit now, don't wait for the bookkeeping
-      if(j.done) final=j; }
+      if(j.end){ Tm.mark('textEnd'); finishText(j.say||text); }   // her words are complete: voice the last bit now, don't wait for the bookkeeping
+      if(j.done){ final=j; Tm.mark('done'); if(j.srv) Tm.set('srv',j.srv); } }
   }
   clearTimeout(fillerTimer);
   const full=(final&&final.say)||text;
   if(!ended){ ended=true; if(full.slice(spoken).trim()) sp.push(full.slice(spoken).trim()); }
   say(full); scrollCaption(Math.max(3,(full.length-spoken)/14)); remember({role:'assistant',content:full});
   await sp.end();
+  Tm.mark('replyDone'); Tm.end();
   if(token!==playToken) return;   // (before: if her voice failed to load she stayed stuck on "thinking")
   face().speaking(false);
   afterReply();
@@ -373,16 +387,16 @@ function afterReply(){
 // plays sentences in order, fetching the voice for the next one while the current one plays
 class Speaker{
   constructor(token){ this.token=token; this.q=[]; this.playing=null; this.started=false; this.mood='front'; this.ended=false; this.first=true; this.fillerP=null; }
-  filler(buf){ if(this.started) return; this.fillerP=playBuffer(buf,null,{keepThinking:true}); }
+  filler(buf){ if(this.started) return; Tm.mark('filler'); this.fillerP=playBuffer(buf,null,{keepThinking:true}); }
   push(text){ const item={text,audio:fetchAudio(text,this.mood)}; this.q.push(item); this.pump(); }
   async pump(){
     if(this.playing||!this.q.length) return;
     const item=this.q[0]; this.playing=item;
     try{
-      const buf=await item.audio;
+      const buf=await item.audio; if(this.first) Tm.mark('firstAudio');
       if(this.fillerP){ await this.fillerP; this.fillerP=null; }
       if(this.token!==playToken) return;
-      this.started=true;
+      this.started=true; if(this.first) Tm.mark('firstWord');
       await playBuffer(buf,this.first?this.mood:null); this.first=false;
     }catch(e){ console.warn('voice failed',e); }
     this.q.shift(); this.playing=null;

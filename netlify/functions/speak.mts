@@ -23,6 +23,7 @@ export default async (req: Request, ctx: Context) => {
   if (await overBudget()) return json({ error: "budget" }, 402);
 
   const body: any = await req.json().catch(() => ({}));
+  const t0 = Date.now();
   const text = String(body.text || "").slice(0, 600);
   if (!text) return json({ error: "no-text" }, 400);
   const style = STYLES[String(body.mood || "")] || STYLES.front;
@@ -43,6 +44,7 @@ export default async (req: Request, ctx: Context) => {
     }
     const d: any = await r.json();
     const bytes = Uint8Array.from(atob(d.audioContent || ""), (c) => c.charCodeAt(0));
+    console.log("speak timing", JSON.stringify({ voice: gname, chars: text.length, total: Date.now() - t0 }));
     await later(ctx, addUsage(0, text.length / 15)); // inside Google's free monthly allowance
     return new Response(bytes, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
   }
@@ -58,6 +60,7 @@ export default async (req: Request, ctx: Context) => {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(a),
     });
     if (r.ok) {
+      console.log("speak timing", JSON.stringify({ model: a.model, voice, chars: text.length, firstByte: Date.now() - t0 }));
       const minutes = text.length / 900;
       await later(ctx, addUsage(a.model === "tts-1" ? text.length * 15 / 1e6 : 0.015 * minutes, minutes * 60));
       return new Response(r.body, { headers: { "content-type": "audio/mpeg", "cache-control": "no-store" } });
